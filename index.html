@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>File d'appels — Leads inbound</title>
+<!-- PapaParse 5.4.1 (MIT) — servi depuis le repo : aucune requête tierce, l'outil marche hors ligne -->
+<script src="vendor/papaparse.min.js"></script>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="wrap">
+  <nav class="tabs">
+    <button class="tab on" data-page="calls">File d'appels</button>
+    <button class="tab" data-page="perf">Performance</button>
+  </nav>
+  <div id="pageCalls">
+  <header>
+    <div class="topline">
+      <div>
+        <div class="eyebrow">Leads inbound · priorisation</div>
+        <h1>File d'appels du jour</h1>
+        <div class="sub" id="datasource">Données de démonstration — dépose ton export CSV pour passer sur tes vrais leads</div>
+      </div>
+      <div class="actions">
+        <button class="btn primary" id="csvBtn">Charger un CSV</button>
+        <input type="file" id="csvInput" accept=".csv,text/csv" hidden>
+      </div>
+    </div>
+    <div class="stats" id="stats"></div>
+    <div class="prog"><div class="bar"><div class="fill" id="progFill"></div></div><div class="lbl" id="progLbl"></div></div>
+    <div class="perf" id="perf"></div>
+    <div class="banner" id="banner"><span class="dot"></span><span id="bannerTxt"></span></div>
+    <div class="drop" id="drop">Glisse ici ton export Salesforce / Snowflake (.csv) — colonnes reconnues automatiquement</div>
+  </header>
+
+  <div class="toolbar">
+    <div class="search">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4-4"/></svg>
+      <input id="search" placeholder="Chercher un nom, une entreprise, un produit…">
+    </div>
+    <div class="chips" id="chips"></div>
+    <select class="sort" id="sort">
+      <option value="score">Trier : priorité</option>
+      <option value="age">Trier : plus vieux</option>
+      <option value="value">Trier : valeur produit</option>
+    </select>
+    <button class="btn" id="focusBtn">Mode focus</button>
+    <button class="btn" id="exportBtn">Exporter la liste</button>
+  </div>
+
+  <section id="rdvSection" style="display:none">
+    <div class="sec-head"><h2>Rappels programmés</h2><span class="count" id="rdvCount"></span><span class="rule"></span></div>
+    <div id="rdvList"></div>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2>À appeler aujourd'hui</h2><span class="count" id="poolCount"></span><span class="rule"></span></div>
+    <div class="focuscard" id="focus"></div>
+    <div id="list"></div>
+    <details class="calledSec" id="calledSec" style="display:none"><summary id="calledSummary"></summary><div id="calledList"></div></details>
+  </section>
+
+  <details class="panel" id="settings">
+    <summary>Réglages du scoring — ajuste les pondérations et vois l'effet en direct</summary>
+    <div class="panel-body">
+      <p class="hint">Score = somme des blocs. On trie et on garde le top <b id="poolLabel">25</b> non encore appelés. Un lead expire au-delà des 14 jours. Les rappels programmés passent avant.</p>
+      <div class="grp"><h3>Liste & cycle de vie</h3>
+        <div class="ctrl"><label>Leads à appeler / jour</label><input type="range" id="s_pool" min="10" max="40" step="1"><span class="v" id="v_pool"></span></div>
+        <div class="ctrl"><label>Expiration (heures)</label><input type="range" id="s_expire" min="168" max="504" step="24"><span class="v" id="v_expire"></span></div>
+        <div class="ctrl"><label>Tentatives max par lead</label><input type="range" id="s_maxcalls" min="1" max="6" step="1"><span class="v" id="v_maxcalls"></span></div>
+      </div>
+      <div class="grp"><h3>Temporel — fraîcheur & relances</h3>
+        <div class="ctrl"><label>Base « jamais relancé par moi »</label><input type="range" id="s_fresh" min="0" max="40" step="1"><span class="v" id="v_fresh"></span></div>
+        <div class="ctrl"><label>Bonus fenêtre 48 h</label><input type="range" id="s_win48" min="0" max="30" step="1"><span class="v" id="v_win48"></span></div>
+        <div class="ctrl"><label>Relancé récemment (&lt;48 h)</label><input type="range" id="s_recent" min="0" max="20" step="1"><span class="v" id="v_recent"></span></div>
+        <div class="ctrl"><label>À relancer (48–120 h)</label><input type="range" id="s_due" min="0" max="40" step="1"><span class="v" id="v_due"></span></div>
+        <div class="ctrl"><label>Relance en retard (&gt;120 h)</label><input type="range" id="s_overdue" min="0" max="45" step="1"><span class="v" id="v_overdue"></span></div>
+        <div class="ctrl"><label>Bonus dernière chance</label><input type="range" id="s_last" min="0" max="30" step="1"><span class="v" id="v_last"></span></div>
+      </div>
+      <div class="grp"><h3>Source</h3>
+        <div class="ctrl"><label>Haut — organic / google-sea / referral</label><input type="range" id="s_srcHi" min="0" max="30" step="1"><span class="v" id="v_srcHi"></span></div>
+        <div class="ctrl"><label>Bas — facebook / hipto</label><input type="range" id="s_srcLo" min="0" max="30" step="1"><span class="v" id="v_srcLo"></span></div>
+      </div>
+      <div class="grp"><h3>Produit & historique</h3>
+        <div class="ctrl"><label>Produit fort — POS Plus / Kiosk / POS Pro</label><input type="range" id="s_prodHi" min="0" max="25" step="1"><span class="v" id="v_prodHi"></span></div>
+        <div class="ctrl"><label>Produit faible — Terminal / Payment</label><input type="range" id="s_prodLo" min="0" max="25" step="1"><span class="v" id="v_prodLo"></span></div>
+        <div class="ctrl"><label>Bonus multi-produits</label><input type="range" id="s_combo" min="0" max="15" step="1"><span class="v" id="v_combo"></span></div>
+        <div class="ctrl"><label>Bonus « déjà connu »</label><input type="range" id="s_hist" min="0" max="20" step="1"><span class="v" id="v_hist"></span></div>
+      </div>
+      <button class="btn" id="resetBtn">Réinitialiser</button>
+    </div>
+  </details>
+
+  <div class="foot">
+    <b>Raccourcis clavier :</b> <span class="kbd">J</span>/<span class="kbd">K</span> naviguer · <span class="kbd">Entrée</span> détail · <span class="kbd">C</span> marquer appelé · <span class="kbd">/</span> chercher.<br><br>
+    <b>« Déjà relancé par moi » :</b> on compare <span style="font-family:var(--mono)">Last Outbound Call Date</span> et <span style="font-family:var(--mono)">Last Form Submission Date</span>. Dates égales → seul l'appel IA a eu lieu → jamais relancé par toi → priorité haute. Le champ <span style="font-family:var(--mono)">Nb Of Outbound Calls</span> est cumulatif, il n'entre pas dans le score.
+  </div>
+  </div><!-- /pageCalls -->
+
+  <div id="pagePerf" style="display:none">
+    <header style="border-bottom:1px solid var(--line);padding:30px 0 18px">
+      <div class="eyebrow">Leads inbound · suivi</div>
+      <h1>Performance</h1>
+      <div class="sub">Ton activité d'appels, au jour le jour et à la semaine.</div>
+    </header>
+    <div class="perf-toolbar">
+      <div class="seg"><button class="segbtn on" data-perf="day">Jour</button><button class="segbtn" data-perf="week">Semaine</button></div>
+      <div class="actions">
+        <button class="btn" id="histExportBtn" title="Télécharger une sauvegarde JSON de l'historique et des pondérations">Exporter l'historique</button>
+        <button class="btn" id="histImportBtn" title="Recharger une sauvegarde JSON — les journées sont fusionnées, rien n'est écrasé à l'aveugle">Importer l'historique</button>
+        <input type="file" id="histInput" accept=".json,application/json" hidden>
+      </div>
+    </div>
+    <div id="perfKpis" class="kpis"></div>
+    <div class="chartcard">
+      <div class="chart-head"><h2 id="chartTitle"></h2><div id="chartLegend" class="legend"></div></div>
+      <div id="chartBox"></div>
+    </div>
+    <div class="foot" style="margin-top:20px">Les jours passés sont des données de démonstration jusqu'à ce que tes appels réels s'accumulent. Ta progression du jour se met à jour en direct quand tu marques « appelé ». L'historique est conservé dans ce navigateur (localStorage) et persiste d'un jour à l'autre tant que tu reviens sur la même URL. Vide-cache ou nouveau poste : utilise « Exporter / Importer l'historique » pour le transporter.</div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script defer src="app.js"></script>
+</body>
+</html>

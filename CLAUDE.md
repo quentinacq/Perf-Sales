@@ -54,9 +54,18 @@ d'appels priorisée** : qui appeler, dans quel ordre, aujourd'hui.
      et les colonnes suivantes disparaissaient, valeurs comprises. La coupure
      n'est retenue que si elle fait nettement mieux (x1,5) que la cellule
      entière, sinon « Lead age (hours) » se ferait couper en « Lead » + « age » ;
-   - chaque fragment est rattaché à la colonne qu'il **recouvre le plus** ;
-   - lignes **ancrées sur le téléphone** : une ligne sans téléphone est la suite
-     de la précédente (cellule qui déborde) ; pieds de page filtrés ;
+   - **grille de colonnes mesurée dans les données** (`dataColumns`) et non
+     déduite des en-têtes : dans un tableau, toutes les valeurs d'une colonne
+     commencent au même x. Les x des en-têtes redécoupés ne sont qu'une
+     estimation au prorata du texte, et elle tombe à côté — c'est ce qui
+     faisait baver les valeurs d'une colonne sur sa voisine ;
+   - lignes **ancrées sur le téléphone**, puis regroupement **par colonne** :
+     les fragments d'une colonne forment des cellules (`splitCells`) et chaque
+     cellule rejoint l'ancre la plus proche de son **milieu**. Ce milieu tombe
+     sur l'ancre quand les cellules sont **centrées verticalement** (cas du
+     Printable View : la suite d'une cellule est alors AU-DESSUS de la ligne du
+     téléphone) et reste plus près de sa propre ancre quand elles sont calées
+     en haut. Pieds de page filtrés ;
    - décimales à virgule et dates `JJ.MM.AAAA` / `JJ/MM/AAAA` préservées telles
      quelles (c'est `mapRow` qui les interprète, comme pour le CSV) ;
    - colonne dérivée **« Dernier appel par »** (IA vs Commercial, tolérance

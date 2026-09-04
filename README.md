@@ -45,11 +45,16 @@ conversion se fait dans ta page avec pdf.js. Ce que fait le convertisseur :
 2. il **redécoupe les en-têtes agglutinés** : sur des colonnes serrées, pdf.js
    renvoie plusieurs en-têtes dans un seul fragment de texte, et sans ce
    découpage les colonnes suivantes disparaissent avec leurs valeurs ;
-3. chaque fragment de texte est rattaché à la colonne qu'il **recouvre le plus**,
-   ce qui encaisse les cellules plus larges que leur en-tête ;
-4. les lignes sont **ancrées sur le téléphone** : une ligne sans numéro est la
-   suite de la précédente (cellule qui déborde sur deux lignes) ; titres et
-   pieds de page sont écartés ;
+3. il **mesure la grille de colonnes dans les données** plutôt que de la
+   déduire des en-têtes : dans un tableau, toutes les valeurs d'une colonne
+   commencent au même x. Les positions des en-têtes redécoupés ne sont
+   qu'estimées et font baver les valeurs d'une colonne sur sa voisine ;
+4. les lignes sont **ancrées sur le téléphone**, et les fragments sont
+   regroupés **par colonne** en cellules : chaque cellule rejoint l'ancre la
+   plus proche de son milieu. Cela couvre les deux mises en page — cellules
+   calées en haut, et cellules **centrées verticalement** comme dans le
+   Printable View, où la suite d'une cellule se trouve au-dessus de la ligne
+   qui porte le téléphone. Titres et pieds de page sont écartés ;
 5. décimales à virgule et dates `JJ.MM.AAAA` / `JJ/MM/AAAA` sont conservées
    telles quelles ;
 6. une colonne **« Dernier appel par »** est dérivée (IA vs Commercial, à ~8 min
@@ -64,10 +69,17 @@ avec l'aperçu de la première valeur de chaque colonne. Il reste accessible à
 tout moment via **« Corriger les colonnes »**. C'est ce qui permet à un autre
 commercial, dont l'export a d'autres intitulés, d'utiliser l'outil.
 
+Quand un groupe d'en-têtes est trop aggloméré pour être découpé de façon sûre,
+les colonnes concernées sont laissées en « Colonne N » avec un avertissement,
+plutôt que mal nommées : un libellé connu posé sur les mauvaises données serait
+pire. L'écran de correspondance, avec son aperçu des valeurs, permet alors de
+trancher.
+
 Limite connue : si le PDF coupe un mot en plein milieu pour le faire tenir dans
 une colonne (`Comptoirdesgourma` / `nds`), les deux morceaux sont recollés avec
-une espace. Les retours à la ligne normaux (entre deux mots) sont, eux,
-reconstitués correctement.
+une espace. Les retours à la ligne normaux (entre deux mots) et les mots coupés
+sur un trait d'union (`google-` / `demandgen`) sont, eux, reconstitués
+correctement.
 
 ## Déployer sur Vercel
 
@@ -116,8 +128,9 @@ attendant un éventuel backend. Prendre l'habitude d'exporter en fin de semaine.
 - `columns.js` — dictionnaire des colonnes attendues et détection souple
   (`matchColumn`, `autoMap`), partagé par le PDF et l'écran de correspondance
 - `pdf-csv.js` — `findHeaderBlocks` (en-têtes multi-lignes / répétés),
-  `splitHeaderCells` (en-têtes agglutinés par pdf.js), `extractRows` (ancrage
-  sur le téléphone), `deriveCaller`, `toCSV`
+  `splitHeaderCells` (en-têtes agglutinés par pdf.js), `dataColumns` (grille
+  mesurée dans les données), `extractRows` / `splitCells` (ancrage sur le
+  téléphone, cellules centrées ou calées en haut), `deriveCaller`, `toCSV`
 - `mapRow` / `pick` — parsing et mapping souple des colonnes CSV
 - `scoreLead` — score ; `tierOf` / `prio` — les 3 paliers et le tri
 - `render` — rendu principal (rappels, stats, pool) ; `renderFocus` — mode focus

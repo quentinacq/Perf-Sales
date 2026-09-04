@@ -3,7 +3,8 @@
 Brief de reprise pour Claude Code. Ce fichier explique ce qu'est le projet,
 comment il marche, la logique métier à **préserver absolument**, et les tâches
 à réaliser. Le code est éclaté en `index.html` + `styles.css` + `app.js`
-(HTML/CSS/JS vanilla + PapaParse servi depuis `vendor/`, aucun build).
++ `columns.js` (dictionnaire de colonnes) + `pdf-csv.js` (conversion PDF), avec
+PapaParse et pdf.js servis depuis `vendor/`. HTML/CSS/JS vanilla, aucun build.
 Déployé comme site statique sur Vercel.
 
 ---
@@ -38,8 +39,31 @@ d'appels priorisée** : qui appeler, dans quel ordre, aujourd'hui.
      restaurées si le fichier en contient, puis re-render.
    - JSON invalide ou sans historique → message d'erreur, rien n'est touché.
 
-Note : PapaParse est désormais servi depuis `vendor/papaparse.min.js` au lieu du
-CDN — l'outil marche hors ligne / derrière un réseau d'entreprise verrouillé, et
+3. **Convertisseur PDF -> CSV intégré** ✅ (`pdf-csv.js`) — bouton « Importer un
+   PDF Printable View ». Plus besoin de passer par un convertisseur tiers : le
+   PDF est lu dans le navigateur avec pdf.js, donc **il ne sort pas de la
+   machine** (c'était le trou dans la raquette : jusqu'ici l'export partait chez
+   un tiers). Port de la logique du script Python de référence :
+   - détection des colonnes **par leur en-tête**, ordre quelconque
+     (`findHeaderBlocks` + `LeadColumns.matchColumn`) ;
+   - en-têtes **sur plusieurs lignes** (« Last Outbound / Call Date » dans une
+     colonne étroite) reconstitués, en-tête **répété à chaque page** ignoré ;
+   - chaque fragment est rattaché à la colonne qu'il **recouvre le plus** ;
+   - lignes **ancrées sur le téléphone** : une ligne sans téléphone est la suite
+     de la précédente (cellule qui déborde) ; pieds de page filtrés ;
+   - décimales à virgule et dates `JJ.MM.AAAA` / `JJ/MM/AAAA` préservées telles
+     quelles (c'est `mapRow` qui les interprète, comme pour le CSV) ;
+   - colonne dérivée **« Dernier appel par »** (IA vs Commercial, tolérance
+     ~8 min), cohérente avec `humanCalled` du score ;
+   - bouton « Télécharger le CSV » pour garder le CSV converti.
+4. **Écran de correspondance des colonnes** ✅ — s'ouvre tout seul quand la
+   détection auto ne trouve pas le nom ou le téléphone, et reste accessible via
+   « Corriger les colonnes ». Un `<select>` par champ attendu, avec l'aperçu de
+   la première valeur de la colonne choisie. Les colonnes qui comptent dans le
+   score mais n'ont pas été trouvées sont signalées sous le titre.
+
+Note : PapaParse et pdf.js sont servis depuis `vendor/` au lieu d'un CDN —
+l'outil marche hors ligne / derrière un réseau d'entreprise verrouillé, et
 n'émet plus aucune requête tierce depuis une page qui manipule des données leads.
 
 ## 3. Lancer / tester
@@ -47,13 +71,15 @@ n'émet plus aucune requête tierce depuis une page qui manipule des données le
 Ouvrir `index.html` dans un navigateur (ou `python3 -m http.server 8000` pour
 être au plus près de la prod). Au chargement, l'app affiche
 des **données de démonstration** (générées en JS) tant qu'aucun CSV n'est chargé.
-Bouton « Charger un CSV » ou glisser-déposer pour passer sur des vraies données.
+Bouton « Charger un CSV », « Importer un PDF Printable View », ou
+glisser-déposer (`.csv` comme `.pdf`) pour passer sur des vraies données.
 Les CSV réels ne sont **pas** versionnés : `.gitignore` bloque `*.csv` pour
 qu'aucun export de leads n'entre dans le repo.
 
-## 4. Format des données d'entrée (CSV)
+## 4. Format des données d'entrée (CSV ou PDF)
 
-Export issu de Salesforce (vue liste → Printable View → converti en CSV). Les
+Export issu de Salesforce, vue liste → Printable View. Le **PDF** se charge
+directement (§2.3) ; le **CSV** reste accepté. Dans les deux cas les
 colonnes sont **détectées automatiquement** par correspondance souple (fonction
 `pick`), donc l'ordre et la casse importent peu. Colonnes attendues :
 
@@ -66,7 +92,10 @@ Particularités de format (déjà gérées, à ne pas casser) :
 - **Dates** `JJ.MM.AAAA, HH:MM` **ou** `JJ/MM/AAAA HH:MM` (les deux acceptées).
 - Délimiteur `;` ou `,` (auto-détecté par PapaParse).
 - `Nb Of Outbound Calls` peut être présent mais est **cumulatif et non fiable** →
-  volontairement **exclu du score**.
+  volontairement **exclu du score** (badge indicatif seulement).
+- Si une colonne clé manque à la détection, l'**écran de correspondance**
+  (§2.4) prend le relais — c'est ce qui rend l'outil utilisable par un autre
+  commercial dont l'export diffère.
 
 ## 5. Logique de scoring — À PRÉSERVER (décidée avec le commercial)
 
@@ -131,6 +160,8 @@ amont, donc `Nb Of Outbound Calls ≥ 1` toujours. On distingue en comparant
 - **Détection de doublons** (`computeDups`) : même téléphone ou même nom → badge.
 - **Copier le nom** (`cpName`) : icône ⧉ pour retrouver le lead dans Salesforce.
 - Recherche, filtres (chips), tri, export de la liste du jour en CSV (`exportCSV`).
+- **Import PDF Printable View** (`loadPDF` → `PdfCsv.convert`) et **écran de
+  correspondance des colonnes** (`openMapper`) — voir §2.3 et §2.4.
 - **Page Performance** (`renderPerfPage`) : vue Jour (appels/jour sur 14j + moyenne
   mobile 7j) et vue Semaine (cette semaine vs semaine dernière), courbes SVG
   dessinées maison (`svgLine`), + mini-panneau « Performance du jour »
@@ -167,9 +198,6 @@ amont, donc `Nb Of Outbound Calls ≥ 1` toujours. On distingue en comparant
 - Persister `calledSet` entre rechargements (localStorage guardé). Aujourd'hui il
   repart à zéro au rechargement : la page Performance montre alors 0 appel du
   jour tant qu'on n'a pas re-marqué, même si `perfHistory` a bien gardé le total.
-- **Écran de correspondance des colonnes** : au chargement d'un CSV, détecter les
-  colonnes manquantes et laisser mapper « telle colonne = GA Source », etc. →
-  indispensable pour que d'autres commerciaux (dont l'export diffère) l'utilisent.
 - Classer la source `legalstart` (et vérifier les variantes google).
 - **Backend** (ex. Supabase) uniquement si besoin réel : historique multi-appareils
   et fonctions d'équipe (classement partagé, config commune). C'est l'étape qui
@@ -185,4 +213,16 @@ amont, donc `Nb Of Outbound Calls ≥ 1` toujours. On distingue en comparant
 `svgLine` (page Performance) · `computeDups` · `cpName` · `phoneHTML` ·
 `toggleCalled` · `exportCSV` · `W`/`DEFAULTS`/`CTRLS` (pondérations & curseurs) ·
 `loadHistory`/`saveHistory`/`seedHistory`/`commitToday` (historique perf) ·
-`exportHistory`/`importHistory`/`mergeHistory`/`sanitizeDay` (sauvegarde JSON).
+`exportHistory`/`importHistory`/`mergeHistory`/`sanitizeDay` (sauvegarde JSON) ·
+`ingestRows`/`applyMapping`/`openMapper` (import unifié CSV+PDF et écran de
+correspondance).
+
+`columns.js` : `COLUMNS` (dictionnaire des colonnes attendues + synonymes) ·
+`matchColumn` (correspondance pondérée égal > commence par > contient) ·
+`autoMap` · `missingRequired`/`missingImportant`. **Une seule source de vérité**
+pour la détection dans le PDF et pour l'écran de correspondance.
+
+`pdf-csv.js` : `readItems` (pdf.js) · `groupLines` · `cellsOf` ·
+`findHeaderBlocks` (en-têtes multi-lignes et répétés) · `buildColumns`/`assign`
+(rattachement par recouvrement) · `extractRows` (ancrage sur le téléphone) ·
+`deriveCaller` (« Dernier appel par ») · `toCSV`.

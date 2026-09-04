@@ -312,12 +312,169 @@ function syncCtrls(){CTRLS.forEach(([k,s,v])=>{document.getElementById(s).value=
 CTRLS.forEach(([k,s,v])=>document.getElementById(s).addEventListener('input',e=>{W[k]=+e.target.value;document.getElementById(v).textContent=W[k];if(k==='pool')document.getElementById('poolLabel').textContent=W[k];render();}));
 document.getElementById('resetBtn').onclick=()=>{W={...DEFAULTS};syncCtrls();render();};
 
-/* CSV */
+/* ===== Import : CSV ou PDF « Printable View » =====
+   Les deux chemins convergent sur ingestRows() : détection souple des colonnes,
+   écran de correspondance si ça ne suffit pas, puis mapRow(). */
+let lastImport=null;    // import APPLIQUÉ (celui qui alimente LEADS)
+let pendingImport=null; // import en attente de correspondance des colonnes
+
+function headersOf(rows){
+  const out=[];
+  rows.forEach(r=>Object.keys(r).forEach(k=>{if(k&&!out.includes(k))out.push(k);}));
+  return out;
+}
+const txt=v=>String(v==null?'':v).replace(/\s+/g,' ').trim();
+function firstValue(rows,header){
+  if(!header)return'';
+  for(const r of rows){const v=txt(r[header]);if(v)return v;}
+  return'';
+}
+
+function ingestRows(rows,label,kind,warnings){
+  rows=(rows||[]).filter(r=>r&&Object.values(r).some(v=>txt(v)));
+  if(!rows.length){alert('Aucune ligne exploitable dans ce fichier.');return;}
+  const headers=headersOf(rows);
+  pendingImport={rows,headers,label,kind,warnings:warnings||[]};
+  const map=LeadColumns.autoMap(headers);
+  const missing=LeadColumns.missingRequired(map);
+  if(missing.length)openMapper(map,missing);      // détection insuffisante
+  else applyMapping(map);
+}
+
+/* map : {colonne canonique -> en-tête du fichier} */
+function applyMapping(map){
+  if(!pendingImport)return;
+  const{rows}=pendingImport;
+  pendingImport.map=map;
+  lastImport=pendingImport;
+  const norm=rows.map(r=>{
+    const o={};
+    LeadColumns.COLUMNS.forEach(c=>{const src=map[c.key];o[c.key]=src?txt(r[src]):'';});
+    return o;
+  });
+  calledSet=new Set();skipSet=new Set();
+  LEADS=norm.map(mapRow);
+  selIdx=-1;
+  showSource();
+  render();
+}
+
+function showSource(){
+  const el=document.getElementById('datasource');
+  if(!lastImport){el.textContent="Données de démonstration — dépose ton export CSV ou ton PDF Printable View pour passer sur tes vrais leads";return;}
+  const{label,kind,warnings,map}=lastImport;
+  const absentes=LeadColumns.missingImportant(map||{});
+  el.innerHTML=`<b>${esc(label)}</b> — ${LEADS.length} leads chargés`
+    +(kind==='pdf'?' · <span title="Conversion faite dans ton navigateur, le PDF n\'est envoyé nulle part">PDF converti en local</span>':'')
+    +`<span class="dslinks">`
+    +(kind==='pdf'?`<button class="lnk" id="dlCsvBtn" title="Récupérer le CSV issu du PDF">Télécharger le CSV</button>`:'')
+    +`<button class="lnk" id="remapBtn">Corriger les colonnes</button></span>`
+    +(absentes.length?`<div class="dswarn">Colonnes non trouvées : ${esc(absentes.join(', '))} — le score est calculé sans elles. <button class="lnk" id="remapBtn2">Corriger</button></div>`:'')
+    +(warnings&&warnings.length?`<div class="dswarn">${warnings.map(esc).join('<br>')}</div>`:'');
+  const dl=document.getElementById('dlCsvBtn');if(dl)dl.onclick=downloadConvertedCSV;
+  ['remapBtn','remapBtn2'].forEach(id=>{const b=document.getElementById(id);if(b)b.onclick=()=>{
+    pendingImport=lastImport;                       // on re-corrige le fichier déjà chargé
+    openMapper(lastImport.map||LeadColumns.autoMap(lastImport.headers),[]);
+  };});
+}
+
+/* Le CSV issu du PDF : ce que produisait le convertisseur tiers, en local. */
+function downloadConvertedCSV(){
+  if(!lastImport)return;
+  const csv=PdfCsv.toCSV(lastImport.headers,lastImport.rows);
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download=lastImport.label.replace(/\.pdf$/i,'')+'.csv';a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  toast('CSV téléchargé');
+}
+
+/* --- écran de correspondance des colonnes --- */
+function openMapper(map,missing){
+  if(!pendingImport)return;
+  const{rows,headers}=pendingImport;
+  const box=document.getElementById('mapRows');
+  box.innerHTML=LeadColumns.COLUMNS.filter(c=>c.req!=='derive').map(c=>{
+    const opts=['<option value="">— absente —</option>'].concat(
+      headers.map(h=>`<option value="${esc(h)}"${map[c.key]===h?' selected':''}>${esc(h)}</option>`)).join('');
+    const req=c.req==='essentiel'?'<span class="mreq">obligatoire</span>':(c.req==='important'?'<span class="mimp">compte dans le score</span>':'');
+    return `<div class="maprow" data-key="${esc(c.key)}">
+      <div class="mlabel"><b>${esc(c.label)}</b> ${req}<div class="mkey">${esc(c.key)}</div></div>
+      <select class="msel" data-key="${esc(c.key)}">${opts}</select>
+      <div class="mprev" data-prev="${esc(c.key)}">${esc(firstValue(rows,map[c.key])||'—')}</div>
+    </div>`;
+  }).join('');
+  const msg=document.getElementById('mapMsg');
+  msg.textContent=missing&&missing.length
+    ?"Détection automatique incomplète : indique au moins le nom et le téléphone."
+    :"Vérifie ou corrige les colonnes détectées. L'aperçu montre la première valeur de la colonne choisie.";
+  box.querySelectorAll('.msel').forEach(sel=>sel.onchange=()=>{
+    box.querySelector(`[data-prev="${CSS.escape(sel.dataset.key)}"]`).textContent=firstValue(rows,sel.value)||'—';
+    validateMapper();
+  });
+  document.getElementById('mapper').hidden=false;
+  validateMapper();
+}
+function readMapper(){
+  const map={};
+  document.querySelectorAll('#mapRows .msel').forEach(sel=>{if(sel.value)map[sel.dataset.key]=sel.value;});
+  return map;
+}
+function validateMapper(){
+  const missing=LeadColumns.missingRequired(readMapper());
+  const ok=document.getElementById('mapOk');
+  ok.disabled=missing.length>0;
+  document.getElementById('mapHint').textContent=missing.length
+    ?'Colonnes obligatoires manquantes : '+missing.join(', ')
+    :'';
+}
+function closeMapper(){document.getElementById('mapper').hidden=true;}
+document.getElementById('mapOk').onclick=()=>{applyMapping(readMapper());closeMapper();toast('Colonnes appliquées');};
+document.getElementById('mapCancel').onclick=()=>{
+  closeMapper();
+  const abandoned=pendingImport&&pendingImport!==lastImport;
+  pendingImport=lastImport;
+  showSource();                                     // revient au fichier réellement chargé
+  if(abandoned)toast('Import annulé');
+};
+document.getElementById('mapper').onclick=e=>{if(e.target.id==='mapper')closeMapper();};
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!document.getElementById('mapper').hidden)closeMapper();});
+
+/* --- CSV --- */
 function loadCSV(file){
   if(typeof Papa==='undefined'){alert("Le parseur CSV n'a pas pu être chargé (vendor/papaparse.min.js). Recharge la page.");return;}
-  Papa.parse(file,{header:true,skipEmptyLines:true,delimiter:'',complete:res=>{const rows=res.data.filter(r=>Object.keys(r).length>1);if(!rows.length){alert('CSV vide ou illisible.');return;}calledSet=new Set();skipSet=new Set();LEADS=rows.map(mapRow);document.getElementById('datasource').innerHTML=`<b>${esc(file.name)}</b> — ${LEADS.length} leads chargés`;selIdx=-1;render();}});}
+  Papa.parse(file,{header:true,skipEmptyLines:true,delimiter:'',complete:res=>{
+    const rows=res.data.filter(r=>Object.keys(r).length>1);
+    if(!rows.length){alert('CSV vide ou illisible.');return;}
+    ingestRows(rows,file.name,'csv',[]);
+  }});
+}
+
+/* --- PDF Printable View --- */
+async function loadPDF(file){
+  const el=document.getElementById('datasource');
+  el.textContent='Lecture du PDF…';
+  try{
+    const{headers,rows,pages,warnings}=await PdfCsv.convert(file,(p,n)=>{el.textContent=`Lecture du PDF… page ${p}/${n}`;});
+    if(!rows.length)throw new Error("Aucun lead trouvé dans ce PDF. Si la mise en page est inhabituelle, exporte en CSV ou corrige les colonnes à la main.");
+    ingestRows(rows,file.name,'pdf',warnings.concat(pages>1?[]:[]));
+    toast(`${rows.length} leads extraits du PDF`);
+  }catch(err){
+    el.textContent='Échec de la lecture du PDF.';
+    alert(err&&err.message?err.message:'PDF illisible.');
+    showSource();
+  }
+}
+function loadFile(file){
+  if(!file)return;
+  if(/\.pdf$/i.test(file.name)||file.type==='application/pdf')loadPDF(file);
+  else loadCSV(file);
+}
 document.getElementById('csvBtn').onclick=()=>document.getElementById('csvInput').click();
-document.getElementById('csvInput').onchange=e=>{if(e.target.files[0])loadCSV(e.target.files[0]);};
+document.getElementById('csvInput').onchange=e=>{if(e.target.files[0])loadCSV(e.target.files[0]);e.target.value='';};
+document.getElementById('pdfBtn').onclick=()=>document.getElementById('pdfInput').click();
+document.getElementById('pdfInput').onchange=e=>{if(e.target.files[0])loadPDF(e.target.files[0]);e.target.value='';};
 
 document.getElementById('search').addEventListener('input',e=>{query=e.target.value;selIdx=-1;render();});
 document.getElementById('sort').addEventListener('change',e=>{sortMode=e.target.value;render();});
@@ -326,7 +483,7 @@ document.getElementById('focusBtn').onclick=()=>{focusMode=!focusMode;const b=do
 const drop=document.getElementById('drop');
 ['dragover','dragenter'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('over');}));
 ['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('over');}));
-drop.addEventListener('drop',e=>{const f=e.dataTransfer.files[0];if(f)loadCSV(f);});
+drop.addEventListener('drop',e=>{const f=e.dataTransfer.files[0];if(f)loadFile(f);});
 
 /* ===== Page Performance ===== */
 let perfMode='day', perfHistory={};

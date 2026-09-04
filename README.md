@@ -1,17 +1,19 @@
 # File d'appels — priorisation des leads inbound
 
-Outil interne : transforme l'export quotidien de leads Salesforce (CSV) en une
-**file d'appels priorisée** — qui appeler, dans quel ordre, aujourd'hui.
+Outil interne : transforme l'export quotidien de leads Salesforce (PDF Printable
+View ou CSV) en une **file d'appels priorisée** — qui appeler, dans quel ordre,
+aujourd'hui.
 
 Site **statique**, sans build et sans backend : `index.html` + `styles.css` +
-`app.js`, plus PapaParse chargé par CDN.
+`app.js` + `columns.js` + `pdf-csv.js`, avec PapaParse et pdf.js servis depuis
+`vendor/` (aucune requête tierce).
 
 ## Confidentialité — la règle du projet
 
-**Le CSV n'est envoyé sur aucun serveur.** Tout le parsing, le scoring et
-l'historique se passent dans le navigateur. C'est un choix de conception (zéro
-friction + confidentialité des données leads) : ne pas l'inverser sans décision
-explicite.
+**Ni le CSV ni le PDF ne sont envoyés sur un serveur.** Tout le parsing, la
+conversion PDF, le scoring et l'historique se passent dans le navigateur. C'est
+un choix de conception (zéro friction + confidentialité des données leads) : ne
+pas l'inverser sans décision explicite.
 
 Conséquence côté repo : `.gitignore` bloque les `*.csv` et les sauvegardes
 d'historique. **Ne commite jamais un export de leads réel.** Le repo doit rester
@@ -27,9 +29,42 @@ Ouvrir `index.html` dans un navigateur suffit. Pour être au plus près de la pr
 python3 -m http.server 8000   # puis http://localhost:8000
 ```
 
-Au chargement, l'app affiche des **données de démonstration** tant qu'aucun CSV
-n'est chargé. Bouton « Charger un CSV » ou glisser-déposer pour passer sur les
-vraies données.
+Au chargement, l'app affiche des **données de démonstration** tant qu'aucun
+fichier n'est chargé. Boutons « Charger un CSV » / « Importer un PDF Printable
+View », ou glisser-déposer (`.csv` comme `.pdf`).
+
+## Import : PDF Printable View, CSV, et correspondance des colonnes
+
+**PDF (recommandé)** — l'export Salesforce « Printable View » se charge tel
+quel : plus besoin de le faire convertir en CSV par un outil tiers, la
+conversion se fait dans ta page avec pdf.js. Ce que fait le convertisseur :
+
+1. il repère la **ligne d'en-tête** et en déduit les colonnes, quel que soit
+   leur ordre — y compris quand un en-tête passe à la ligne
+   (« Last Outbound / Call Date ») ou qu'il est réimprimé à chaque page ;
+2. chaque fragment de texte est rattaché à la colonne qu'il **recouvre le plus**,
+   ce qui encaisse les cellules plus larges que leur en-tête ;
+3. les lignes sont **ancrées sur le téléphone** : une ligne sans numéro est la
+   suite de la précédente (cellule qui déborde sur deux lignes) ; titres et
+   pieds de page sont écartés ;
+4. décimales à virgule et dates `JJ.MM.AAAA` / `JJ/MM/AAAA` sont conservées
+   telles quelles ;
+5. une colonne **« Dernier appel par »** est dérivée (IA vs Commercial, à ~8 min
+   près), la même règle que le score.
+
+Le bouton **« Télécharger le CSV »** récupère le CSV issu du PDF, si tu veux le
+garder ou le rejouer plus tard.
+
+**Écran de correspondance des colonnes** — si le nom ou le téléphone n'est pas
+reconnu, un écran s'ouvre pour désigner « telle colonne = GA Source », etc.,
+avec l'aperçu de la première valeur de chaque colonne. Il reste accessible à
+tout moment via **« Corriger les colonnes »**. C'est ce qui permet à un autre
+commercial, dont l'export a d'autres intitulés, d'utiliser l'outil.
+
+Limite connue : si le PDF coupe un mot en plein milieu pour le faire tenir dans
+une colonne (`Comptoirdesgourma` / `nds`), les deux morceaux sont recollés avec
+une espace. Les retours à la ligne normaux (entre deux mots) sont, eux,
+reconstitués correctement.
 
 ## Déployer sur Vercel
 
@@ -73,6 +108,12 @@ attendant un éventuel backend. Prendre l'habitude d'exporter en fin de semaine.
 
 ## Repères code
 
+- `ingestRows` / `applyMapping` / `openMapper` — import unifié CSV + PDF et
+  écran de correspondance des colonnes
+- `columns.js` — dictionnaire des colonnes attendues et détection souple
+  (`matchColumn`, `autoMap`), partagé par le PDF et l'écran de correspondance
+- `pdf-csv.js` — `findHeaderBlocks` (en-têtes multi-lignes / répétés),
+  `extractRows` (ancrage sur le téléphone), `deriveCaller`, `toCSV`
 - `mapRow` / `pick` — parsing et mapping souple des colonnes CSV
 - `scoreLead` — score ; `tierOf` / `prio` — les 3 paliers et le tri
 - `render` — rendu principal (rappels, stats, pool) ; `renderFocus` — mode focus

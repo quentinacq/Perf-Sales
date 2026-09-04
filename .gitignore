@@ -1,5 +1,6 @@
 # Exports de leads — aucune donnée client ne doit entrer dans le repo
 *.csv
+*.pdf
 !exemple-*.csv
 
 # Sauvegardes d'historique

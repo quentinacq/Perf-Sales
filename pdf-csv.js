@@ -108,10 +108,40 @@ function mergeHeaderCells(base,extra){
   });
   return out;
 }
+/* Quand deux colonnes sont serrées, pdf.js rend leurs deux en-têtes dans UN
+   seul fragment (« Last Outbound Call Date Last Form Submission Date ») : la
+   deuxième colonne disparaît et ses valeurs tombent dans la première. On
+   redécoupe donc une cellule d'en-tête qui matche visiblement deux colonnes.
+   Garde-fou : la coupure doit faire nettement mieux que la cellule entière
+   (x1,5), sinon « Lead age (hours) » se ferait couper en « Lead » + « age ». */
+const SPLIT_GAIN=1.5;
+function splitHeaderCell(cell,depth){
+  const words=cell.str.split(' ');
+  if(words.length<2||(depth||0)>4)return[cell];
+  const whole=global.LeadColumns.matchColumn(cell.str,null);
+  const base=whole?whole.score:0;
+  let best=null;
+  for(let i=1;i<words.length;i++){
+    const L=words.slice(0,i).join(' '),R=words.slice(i).join(' ');
+    const ml=global.LeadColumns.matchColumn(L,null),mr=global.LeadColumns.matchColumn(R,null);
+    if(!ml||!mr||ml.key===mr.key)continue;
+    const score=ml.score+mr.score;
+    if(!best||score>best.score)best={score,L,R};
+  }
+  if(!best||best.score<base*SPLIT_GAIN||best.score<=base)return[cell];
+  // largeurs estimées au prorata du nombre de caractères
+  const total=cell.str.length||1;
+  const lw=cell.w*(best.L.length/total);
+  const left ={...cell,str:best.L,w:lw};
+  const right={...cell,str:best.R,x:cell.x+cell.w*((best.L.length+1)/total),w:cell.w-lw};
+  return splitHeaderCell(left,(depth||0)+1).concat(splitHeaderCell(right,(depth||0)+1));
+}
+const splitHeaderCells=cells=>cells.reduce((a,c)=>a.concat(splitHeaderCell(c,0)),[]);
+
 function findHeaderBlocks(lines){
   const blocks=[];
   for(let i=0;i<lines.length;i++){
-    let cells=cellsOf(lines[i]);
+    let cells=splitHeaderCells(cellsOf(lines[i]));
     if(cells.length<3)continue;
     let hits=scoreCells(cells);
     if(hits<3)continue;
@@ -225,8 +255,8 @@ async function convert(file,onProgress){
   const rows=extractRows(lines,blocks,cols,warnings);
   const headers=cols.map(c=>c.name);
   if(deriveCaller(rows,cols))headers.push('Dernier appel par');
-  const missing=global.LeadColumns.missingImportant(global.LeadColumns.autoMap(headers));
-  if(missing.length)warnings.push('Colonnes non reconnues automatiquement : '+missing.join(', ')+'.');
+  // les colonnes manquantes sont signalées par showSource(), avec le lien « Corriger » :
+  // pas la peine de le répéter ici.
   // toutes les clés présentes, même vides : PapaParse/CSV attend des lignes homogènes
   rows.forEach(r=>headers.forEach(h=>{if(r[h]==null)r[h]='';}));
   return{headers,rows,pages,warnings};
@@ -241,5 +271,5 @@ function toCSV(headers,rows){
 if(typeof pdfjsLib!=='undefined'&&pdfjsLib.GlobalWorkerOptions)
   pdfjsLib.GlobalWorkerOptions.workerSrc=new URL('vendor/pdf.worker.min.js',document.baseURI).href;
 
-global.PdfCsv={convert,toCSV,groupLines,cellsOf,findHeaderBlocks,buildColumns,extractRows,parseDate,PHONE_RE};
+global.PdfCsv={convert,toCSV,groupLines,cellsOf,splitHeaderCells,findHeaderBlocks,buildColumns,extractRows,parseDate,PHONE_RE};
 })(window);

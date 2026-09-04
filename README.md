@@ -42,14 +42,17 @@ conversion se fait dans ta page avec pdf.js. Ce que fait le convertisseur :
 1. il repère la **ligne d'en-tête** et en déduit les colonnes, quel que soit
    leur ordre — y compris quand un en-tête passe à la ligne
    (« Last Outbound / Call Date ») ou qu'il est réimprimé à chaque page ;
-2. chaque fragment de texte est rattaché à la colonne qu'il **recouvre le plus**,
+2. il **redécoupe les en-têtes agglutinés** : sur des colonnes serrées, pdf.js
+   renvoie plusieurs en-têtes dans un seul fragment de texte, et sans ce
+   découpage les colonnes suivantes disparaissent avec leurs valeurs ;
+3. chaque fragment de texte est rattaché à la colonne qu'il **recouvre le plus**,
    ce qui encaisse les cellules plus larges que leur en-tête ;
-3. les lignes sont **ancrées sur le téléphone** : une ligne sans numéro est la
+4. les lignes sont **ancrées sur le téléphone** : une ligne sans numéro est la
    suite de la précédente (cellule qui déborde sur deux lignes) ; titres et
    pieds de page sont écartés ;
-4. décimales à virgule et dates `JJ.MM.AAAA` / `JJ/MM/AAAA` sont conservées
+5. décimales à virgule et dates `JJ.MM.AAAA` / `JJ/MM/AAAA` sont conservées
    telles quelles ;
-5. une colonne **« Dernier appel par »** est dérivée (IA vs Commercial, à ~8 min
+6. une colonne **« Dernier appel par »** est dérivée (IA vs Commercial, à ~8 min
    près), la même règle que le score.
 
 Le bouton **« Télécharger le CSV »** récupère le CSV issu du PDF, si tu veux le
@@ -113,7 +116,8 @@ attendant un éventuel backend. Prendre l'habitude d'exporter en fin de semaine.
 - `columns.js` — dictionnaire des colonnes attendues et détection souple
   (`matchColumn`, `autoMap`), partagé par le PDF et l'écran de correspondance
 - `pdf-csv.js` — `findHeaderBlocks` (en-têtes multi-lignes / répétés),
-  `extractRows` (ancrage sur le téléphone), `deriveCaller`, `toCSV`
+  `splitHeaderCells` (en-têtes agglutinés par pdf.js), `extractRows` (ancrage
+  sur le téléphone), `deriveCaller`, `toCSV`
 - `mapRow` / `pick` — parsing et mapping souple des colonnes CSV
 - `scoreLead` — score ; `tierOf` / `prio` — les 3 paliers et le tri
 - `render` — rendu principal (rappels, stats, pool) ; `renderFocus` — mode focus

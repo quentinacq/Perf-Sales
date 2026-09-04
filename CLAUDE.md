@@ -48,6 +48,12 @@ d'appels priorisée** : qui appeler, dans quel ordre, aujourd'hui.
      (`findHeaderBlocks` + `LeadColumns.matchColumn`) ;
    - en-têtes **sur plusieurs lignes** (« Last Outbound / Call Date » dans une
      colonne étroite) reconstitués, en-tête **répété à chaque page** ignoré ;
+   - en-têtes **agglutinés** redécoupés (`splitHeaderCells`) : quand deux
+     colonnes sont serrées, pdf.js rend leurs en-têtes dans un seul fragment
+     (« Prospect product interest Lead age (hours) Last Outbound Call Date… »)
+     et les colonnes suivantes disparaissaient, valeurs comprises. La coupure
+     n'est retenue que si elle fait nettement mieux (x1,5) que la cellule
+     entière, sinon « Lead age (hours) » se ferait couper en « Lead » + « age » ;
    - chaque fragment est rattaché à la colonne qu'il **recouvre le plus** ;
    - lignes **ancrées sur le téléphone** : une ligne sans téléphone est la suite
      de la précédente (cellule qui déborde) ; pieds de page filtrés ;

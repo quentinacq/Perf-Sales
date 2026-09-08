@@ -181,6 +181,8 @@
   @media(max-width:640px){
     .stats{flex-wrap:wrap}.stat{flex:1 1 50%;border-bottom:1px solid var(--line2)}
     .row{grid-template-columns:26px 1fr auto;gap:9px}.callbox{display:none}h1{font-size:23px}
+    /* l'heure du rappel reste visible sur mobile : c'est l'info clé de la section */
+    .callbox.rdvbox{display:flex}.rdvbox .phone{display:none}
   }
 
   /* ===== Import : liens de source & écran de correspondance ===== */

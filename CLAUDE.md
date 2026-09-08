@@ -167,8 +167,13 @@ amont, donc `Nb Of Outbound Calls ≥ 1` toujours. On distingue en comparant
 
 ## 6. Fonctionnalités en place
 
-- **Marquer « appelé »** (`calledSet`, session) : le lead sort et le suivant
-  remonte → la liste des 25 se réalimente en continu.
+- **Marquer « appelé »** (`calledSet`) : le lead sort et le suivant remonte →
+  la liste des 25 se réalimente en continu. Les rappels programmés se marquent
+  aussi (ce sont des appels comme les autres, comptés dans la journée).
+  Les appels du jour sont retenus par **identité de lead** (`leadKey` :
+  téléphone + nom) et persistés (`loadCalled`/`saveCalled`, guardés) : ils
+  survivent à un rechargement de page comme à un ré-import de l'export en
+  cours de journée.
 - **Mode focus** (`renderFocus`) : carte « prochain appel » + avance auto ;
   clavier `C`/`Entrée` = appelé, `S` = passer.
 - **Badge tentatives** `nbCalls/max` (`attBadge`) — visuel, hors score.
@@ -191,8 +196,10 @@ amont, donc `Nb Of Outbound Calls ≥ 1` toujours. On distingue en comparant
   (marqués `demo:true` pour qu'un import réel les remplace toujours).
 - Filet de sécurité : `exportHistory`/`importHistory` (§2). À exporter en fin de
   semaine tant qu'il n'y a pas de backend.
-- `calledSet` est **par session** (repart à zéro au rechargement du CSV = nouvelle
-  journée). Envisageable de le persister aussi (localStorage, guardé) — voir roadmap.
+- `calledSet` est désormais **persisté à la journée** (clé `calledDay` :
+  `{date, keys}`), par identité de lead et non par id interne. Une nouvelle
+  journée repart naturellement de zéro ; un ré-import en cours de journée ne
+  perd plus les appels déjà marqués.
 - **Ne PAS utiliser** de storage non supporté ailleurs ; garder les accès storage
   tolérants aux erreurs.
 
@@ -210,9 +217,6 @@ amont, donc `Nb Of Outbound Calls ≥ 1` toujours. On distingue en comparant
 
 ## 9. Roadmap (après les tâches immédiates)
 
-- Persister `calledSet` entre rechargements (localStorage guardé). Aujourd'hui il
-  repart à zéro au rechargement : la page Performance montre alors 0 appel du
-  jour tant qu'on n'a pas re-marqué, même si `perfHistory` a bien gardé le total.
 - Classer la source `legalstart` (et vérifier les variantes google).
 - **Backend** (ex. Supabase) uniquement si besoin réel : historique multi-appareils
   et fonctions d'équipe (classement partagé, config commune). C'est l'étape qui
@@ -230,7 +234,8 @@ amont, donc `Nb Of Outbound Calls ≥ 1` toujours. On distingue en comparant
 `loadHistory`/`saveHistory`/`seedHistory`/`commitToday` (historique perf) ·
 `exportHistory`/`importHistory`/`mergeHistory`/`sanitizeDay` (sauvegarde JSON) ·
 `ingestRows`/`applyMapping`/`openMapper` (import unifié CSV+PDF et écran de
-correspondance).
+correspondance) · `leadKey`/`loadCalled`/`saveCalled`/`syncCalledFromKeys`
+(appels du jour persistés) · `field` (lecture des colonnes canoniques).
 
 `columns.js` : `COLUMNS` (dictionnaire des colonnes attendues + synonymes) ·
 `matchColumn` (correspondance pondérée égal > commence par > contient) ·

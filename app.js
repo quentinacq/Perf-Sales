@@ -5,26 +5,38 @@ let calledSet=new Set();
 let query='',activeFilter='all',sortMode='score',selIdx=-1;
 let focusMode=false,skipSet=new Set(),dupSet=new Set();
 const CALL_TOL_MS=8*60*1000;
+/* Identité d'un lead, indépendante de son id interne : permet de retrouver les
+   leads déjà appelés après un ré-import ou une correction des colonnes. */
+const leadKey=L=>(L.phone||'').replace(/\D/g,'').slice(-9)+'|'+(L.name||'').toLowerCase().trim();
 
 function parseNum(s){if(s==null||s==='')return NaN;return parseFloat(String(s).replace(',','.').replace(/\s/g,''));}
-function parseDate(s){if(!s)return null;const m=String(s).trim().match(/^(\d{2})[.\/](\d{2})[.\/](\d{4})(?:[,\sT]+(\d{1,2}):(\d{2}))?/);if(m)return new Date(+m[3],+m[2]-1,+m[1],m[4]?+m[4]:0,m[5]?+m[5]:0);const d=new Date(s);return isNaN(d)?null:d;}
+function parseDate(s){if(!s)return null;const m=String(s).trim().match(/^(\d{1,2})[.\/](\d{1,2})[.\/](\d{4})(?:[,\sT]+(\d{1,2}):(\d{2}))?/);if(m)return new Date(+m[3],+m[2]-1,+m[1],m[4]?+m[4]:0,m[5]?+m[5]:0);const d=new Date(s);return isNaN(d)?null:d;}
 function pick(row,names){const keys=Object.keys(row);for(const n of names){const hit=keys.find(k=>k.toLowerCase().replace(/[\s_]/g,'').includes(n));if(hit&&row[hit]!=null&&row[hit]!=='')return row[hit];}return'';}
+/* Les lignes arrivent avec les colonnes canoniques (ingestRows -> applyMapping),
+   donc on lit la colonne attendue DIRECTEMENT quand elle existe. `pick` reste le
+   repli souple, mais il ne doit plus servir quand la colonne est simplement
+   vide : il partait alors chercher une voisine et un lead sans nom héritait de
+   son âge (« 611,89 » comme nom). */
+function field(row,canon,names){
+  if(Object.prototype.hasOwnProperty.call(row,canon)){const v=row[canon];return v==null?'':String(v);}
+  return pick(row,names);
+}
 let _id=0;
 function mapRow(row){
-  const sub=parseDate(pick(row,['lastformsubmission','submissiondate','formsubmission']));
-  const call=parseDate(pick(row,['lastoutboundcall','outboundcall','lastcall']));
-  const ageRaw=parseNum(pick(row,['leadage','agehours','age']));
+  const sub=parseDate(field(row,'Last Form Submission Date',['lastformsubmission','submissiondate','formsubmission']));
+  const call=parseDate(field(row,'Last Outbound Call Date',['lastoutboundcall','outboundcall','lastcall']));
+  const ageRaw=parseNum(field(row,'Lead age (hours)',['leadage','agehours','age']));
   return {id:++_id,
-    name:pick(row,['name','lead','contact'])||'—',
-    company:pick(row,['company','account','compte'])||'',
-    phone:pick(row,['phone','mobile','tel','téléphone','telephone'])||'',
-    product:pick(row,['prospectproduct','productinterest','product','produit'])||'',
-    source:(pick(row,['gasource','source','canal'])||'').toLowerCase(),
-    biz:pick(row,['businesstype','typeofbusiness','commerce','natureof'])||'',
+    name:field(row,'Name',['name','lead','contact'])||'—',
+    company:field(row,'Company',['company','account','compte'])||'',
+    phone:field(row,'Phone',['phone','mobile','tel','téléphone','telephone'])||'',
+    product:field(row,'Prospect product interest',['prospectproduct','productinterest','product','produit'])||'',
+    source:(field(row,'GA Source',['gasource','source','canal'])||'').toLowerCase(),
+    biz:field(row,'Business type',['businesstype','typeofbusiness','commerce','natureof'])||'',
     ageHours:isNaN(ageRaw)?(sub?(Date.now()-sub)/3.6e6:0):ageRaw,
     subDate:sub,lastCall:call,
-    callback:parseDate(pick(row,['callback','callbackdate','rappel'])),
-    nbCalls:parseNum(pick(row,['nbofoutbound','outboundcalls','nbcalls']))||0};
+    callback:parseDate(field(row,'Call back date',['callback','callbackdate','rappel'])),
+    nbCalls:parseNum(field(row,'Nb Of Outbound Calls',['nbofoutbound','outboundcalls','nbcalls']))||0};
 }
 function sourceTier(src){if(/organic|google|bing|referral|seo|marketplace/.test(src))return'hi';if(/facebook|meta|insta|hipto|tiktok|companeo/.test(src))return'lo';return'mid';}
 function productScore(p){const s=(p||'').toLowerCase();const strong=/pos plus|pos pro|kiosk|caisse/.test(s);const weakOnly=/terminal|payment|reader|tpe/.test(s)&&!strong;let base=strong?W.prodHi:(weakOnly?W.prodLo:Math.round((W.prodHi+W.prodLo)/2));const combo=(p||'').split(/[;,]/).map(x=>x.trim()).filter(Boolean).length>1;return base+(combo?W.combo:0);}
@@ -94,7 +106,7 @@ function rowHTML(L,r,rank,isCalled){
     <div class="callbox">${phoneHTML(L.phone)}<div class="score">${r.score}</div></div>
     <button class="doneBtn" data-done="${L.id}" title="Marquer appelé (C)">${isCalled?'✓':'○'}</button>
     <div class="bd"><div class="bd-grid">${bd}</div>
-      <div class="bd-note">${L.humanCalled?'Déjà appelé par toi après sa demande.':'Seul l\'appel IA a eu lieu — pas encore relancé par toi.'} Nb appels cumulés : ${L.nbCalls||0} (non compté).</div>
+      <div class="bd-note">${r.humanCalled?'Déjà appelé par toi après sa demande.':'Seul l\'appel IA a eu lieu — pas encore relancé par toi.'} Nb appels cumulés : ${L.nbCalls||0} (non compté).</div>
     </div>
   </div>`;
 }
@@ -128,7 +140,7 @@ function renderFocus(pool){
   document.getElementById('fcDone').onclick=()=>toggleCalled(L.id);
   document.getElementById('fcSkip').onclick=()=>{skipSet.add(L.id);render();};
 }
-function renderPerf(rankMap){
+function renderPerf(rankMap,rdvIds){
   const el=document.getElementById('perf');
   if(!calledSet.size){el.classList.remove('show');el.innerHTML='';return;}
   const called=LEADS.filter(L=>calledSet.has(L.id));
@@ -136,16 +148,21 @@ function renderPerf(rankMap){
   called.forEach(L=>{const s=L.source||'?';srcCount[s]=(srcCount[s]||0)+1;});
   const srcHTML=Object.entries(srcCount).sort((a,b)=>b[1]-a[1])
     .map(([s,n])=>`<span class="badge b-src ${sourceTier(s)==='hi'?'hi':''}">${esc(s)} · ${n}</span>`).join('');
-  const bk={t5:0,t15:0,t25:0,out:0};
-  called.forEach(L=>{const rk=rankMap.get(L.id);
+  // un rappel honoré n'est pas « hors liste » : c'est un engagement tenu, il a
+  // sa propre catégorie plutôt que d'être compté comme un écart de priorité.
+  const bk={rdv:0,t5:0,t15:0,t25:0,out:0};
+  called.forEach(L=>{
+    if(rdvIds&&rdvIds.has(L.id)){bk.rdv++;return;}
+    const rk=rankMap.get(L.id);
     if(rk==null||rk>W.pool)bk.out++;else if(rk<=5)bk.t5++;else if(rk<=15)bk.t15++;else bk.t25++;});
   const tot=called.length;
   const seg=(n,c)=>n?`<div class="perf-seg" style="width:${(n/tot*100).toFixed(1)}%;background:${c}"></div>`:'';
-  const bar=seg(bk.t5,'var(--teal)')+seg(bk.t15,'#5f978e')+seg(bk.t25,'#c9c6bd')+seg(bk.out,'var(--signal)');
+  const bar=seg(bk.rdv,'var(--amber)')+seg(bk.t5,'var(--teal)')+seg(bk.t15,'#5f978e')+seg(bk.t25,'#c9c6bd')+seg(bk.out,'var(--signal)');
   el.innerHTML=`<div class="ph">Performance du jour</div>
     <div class="prow"><span class="plabel">Par source</span><div class="chips">${srcHTML}</div></div>
     <div class="prow"><span class="plabel">Priorité suivie</span><div class="perf-bar">${bar}</div></div>
     <div class="prow"><span class="plabel"></span>
+      ${bk.rdv?`<span class="pcount" style="color:var(--amber)">■ Rappels · ${bk.rdv}</span>`:''}
       <span class="pcount" style="color:var(--teal)">■ Top 5 · ${bk.t5}</span>
       <span class="pcount" style="color:#5f978e">■ 6–15 · ${bk.t15}</span>
       <span class="pcount" style="color:#9a968c">■ 16–${W.pool} · ${bk.t25}</span>
@@ -193,11 +210,13 @@ function render(){
     <div class="stat"><div class="n">${backlogCount}</div><div class="l">backlog &gt;14j</div></div>`;
 
   // progression
-  const target=Math.min(W.pool,scored.filter(({L})=>!calledSet.has(L.id)).length+calledSet.size);
+  const restants=scored.filter(({L})=>!calledSet.has(L.id)).length
+                +rdv.filter(({L})=>!calledSet.has(L.id)).length;
+  const target=Math.min(W.pool,restants+calledSet.size);
   const done=calledSet.size;
   document.getElementById('progFill').style.width=(target?Math.min(100,done/target*100):0)+'%';
   document.getElementById('progLbl').innerHTML=`Appelés aujourd'hui <b>${done}</b>${target?` / ${target}`:''}`;
-  renderPerf(rankMap);
+  renderPerf(rankMap,new Set(rdv.map(x=>x.L.id)));
 
   // bannière expiration
   const soon=scored.filter(({L})=>!calledSet.has(L.id)&&L.ageHours>W.expire-24&&L.ageHours<=W.expire).length;
@@ -217,10 +236,12 @@ function render(){
     document.getElementById('rdvCount').textContent=rdv.length+(rdv.length>1?' engagements':' engagement');
     document.getElementById('rdvList').innerHTML=rdv.map(({L,od})=>{
       const t=L.callback.toLocaleString('fr-FR',{weekday:'short',hour:'2-digit',minute:'2-digit'});
-      return `<div class="row" data-id="${L.id}"><div class="rank" style="color:${od?'var(--signal)':'var(--teal)'}">◷</div>
+      const fait=calledSet.has(L.id);
+      return `<div class="row ${fait?'done':''}" data-id="${L.id}"><div class="rank" style="color:${fait?'var(--teal)':(od?'var(--signal)':'var(--teal)')}">${fait?'✓':'◷'}</div>
         <div class="main"><div class="nm">${esc(L.name)} ${cpName(L.name)}${L.company&&L.company!=='-'?` <span class="co">· ${esc(L.company)}</span>`:''}</div>
         <div class="meta"><span class="tag ${od?'od':'rdv'}">${od?'Rappel en retard':'Rappel convenu'}</span>${srcBadge(L.source)}<span class="badge b-prod">${esc(shortProd(L.product))}</span></div></div>
-        <div class="callbox">${phoneHTML(L.phone)}</div><div class="rdv-time ${od?'od':''}">${t}</div></div>`;
+        <div class="callbox rdvbox">${phoneHTML(L.phone)}<div class="rdv-time ${od?'od':''}">${t}</div></div>
+        <button class="doneBtn" data-done="${L.id}" title="Marquer appelé">${fait?'✓':'○'}</button></div>`;
     }).join('');
   }else rdvSec.style.display='none';
 
@@ -246,7 +267,31 @@ function wireRows(){
   document.querySelectorAll('.cp').forEach(c=>c.onclick=e=>{e.stopPropagation();navigator.clipboard?.writeText(c.dataset.ph);toast('Numéro copié');});
   document.querySelectorAll('.cpn').forEach(c=>c.onclick=e=>{e.stopPropagation();navigator.clipboard?.writeText(c.dataset.cn);toast('Nom copié — colle-le dans Salesforce');});
 }
-function toggleCalled(id){if(calledSet.has(id))calledSet.delete(id);else{calledSet.add(id);toast('Marqué appelé');}render();commitToday();if(document.getElementById('pagePerf').style.display!=='none')renderPerfPage();}
+/* Les appels du jour sont retenus par IDENTITÉ de lead (téléphone + nom) et
+   non par id interne : ils survivent ainsi à un rechargement de page comme à
+   un ré-import de l'export en cours de journée. Sans ça, marquer 20 appels
+   puis recharger l'export remettait le compteur à zéro et la page
+   Performance sous-comptait la journée. Accès storage guardés. */
+let calledKeys=new Set();
+function loadCalled(){
+  try{const o=JSON.parse(localStorage.getItem('calledDay'));
+    if(o&&o.date===dkey(new Date())&&Array.isArray(o.keys))return new Set(o.keys);}catch(e){}
+  return new Set();
+}
+function saveCalled(){
+  try{localStorage.setItem('calledDay',JSON.stringify({date:dkey(new Date()),keys:[...calledKeys]}));}catch(e){}
+}
+function syncCalledFromKeys(){
+  calledSet=new Set(LEADS.filter(L=>calledKeys.has(leadKey(L))).map(L=>L.id));
+}
+function toggleCalled(id){
+  const L=LEADS.find(x=>x.id===id);if(!L)return;
+  const k=leadKey(L);
+  if(calledSet.has(id)){calledSet.delete(id);calledKeys.delete(k);}
+  else{calledSet.add(id);calledKeys.add(k);toast('Marqué appelé');}
+  saveCalled();render();commitToday();
+  if(document.getElementById('pagePerf').style.display!=='none')renderPerfPage();
+}
 
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),1400);}
 
@@ -255,6 +300,7 @@ function poolRows(){return [...document.querySelectorAll('#list .row')];}
 function applySel(){poolRows().forEach((r,i)=>r.classList.toggle('sel',i===selIdx));const r=poolRows()[selIdx];if(r)r.scrollIntoView({block:'nearest'});}
 document.addEventListener('keydown',e=>{
   if(/input|textarea|select/i.test(e.target.tagName))return;
+  if(!document.getElementById('mapper').hidden)return;   // modale ouverte : on ne touche pas à la file
   if(focusMode){const d=document.getElementById('fcDone'),s=document.getElementById('fcSkip');
     if((e.key==='c'||e.key==='Enter')&&d){e.preventDefault();d.click();return;}
     if(e.key==='s'&&s){e.preventDefault();s.click();return;}}
@@ -275,7 +321,9 @@ function exportCSV(){
   const head=['Rang','Nom','Entreprise','Téléphone','Produit','Source','Âge (h)','Raison','Score'];
   const lines=[head.join(';')].concat(top.map((x,i)=>[i+1,x.L.name,x.L.company,x.L.phone,x.L.product,x.L.source,Math.round(x.L.ageHours),x.r.reason,x.r.score].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(';')));
   const blob=new Blob(['\ufeff'+lines.join('\n')],{type:'text/csv'});
-  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='file-appels-'+now.toISOString().slice(0,10)+'.csv';a.click();
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download='file-appels-'+now.toISOString().slice(0,10)+'.csv';a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
   toast('Liste exportée');
 }
 
@@ -352,8 +400,9 @@ function applyMapping(map){
     LeadColumns.COLUMNS.forEach(c=>{const src=map[c.key];o[c.key]=src?txt(r[src]):'';});
     return o;
   });
-  calledSet=new Set();skipSet=new Set();
+  skipSet=new Set();
   LEADS=norm.map(mapRow);
+  syncCalledFromKeys();          // les appels du jour suivent les leads, pas les ids
   selIdx=-1;
   showSource();
   render();
@@ -456,9 +505,9 @@ async function loadPDF(file){
   const el=document.getElementById('datasource');
   el.textContent='Lecture du PDF…';
   try{
-    const{headers,rows,pages,warnings}=await PdfCsv.convert(file,(p,n)=>{el.textContent=`Lecture du PDF… page ${p}/${n}`;});
+    const{headers,rows,warnings}=await PdfCsv.convert(file,(p,n)=>{el.textContent=`Lecture du PDF… page ${p}/${n}`;});
     if(!rows.length)throw new Error("Aucun lead trouvé dans ce PDF. Si la mise en page est inhabituelle, exporte en CSV ou corrige les colonnes à la main.");
-    ingestRows(rows,file.name,'pdf',warnings.concat(pages>1?[]:[]));
+    ingestRows(rows,file.name,'pdf',warnings);
     toast(`${rows.length} leads extraits du PDF`);
   }catch(err){
     el.textContent='Échec de la lecture du PDF.';
@@ -492,6 +541,14 @@ function loadHistory(){try{const s=localStorage.getItem('perfHistory');if(s)perf
 function saveHistory(){try{localStorage.setItem('perfHistory',JSON.stringify(perfHistory));}catch(e){}}
 function seedHistory(){const t=new Date();for(let i=1;i<=27;i++){const d=new Date(t);d.setDate(d.getDate()-i);const wd=d.getDay();const we=(wd===0||wd===6);const calls=we?4+Math.floor(Math.random()*6):15+Math.floor(Math.random()*13);const backlog=Math.floor(calls*(0.08+Math.random()*0.22));perfHistory[dkey(d)]={calls,active:calls-backlog,backlog,demo:true};}}
 function todayStats(){let active=0,backlog=0;LEADS.forEach(L=>{if(calledSet.has(L.id)){(L.ageHours>W.expire?backlog++:active++);}});return{calls:active+backlog,active,backlog};}
+/* Ce que l'on sait de la journée : les appels marqués dans cette session, ou
+   le total déjà enregistré s'il est plus élevé. Sans ça, après un
+   rechargement (calledSet repart à zéro) le KPI affichait 0 alors que la
+   courbe, elle, montrait le total conservé. */
+function todayView(){
+  const t=todayStats(),p=perfHistory[dkey(new Date())];
+  return(p&&p.calls>t.calls)?{calls:p.calls,active:p.active|0,backlog:p.backlog|0}:t;
+}
 function commitToday(){const t=todayStats();const k=dkey(new Date());const p=perfHistory[k];if(!p||t.calls>=p.calls)perfHistory[k]=t;saveHistory();}
 function callsOn(d){const k=dkey(d);if(k===dkey(new Date())){const t=todayStats();const p=perfHistory[k];return Math.max(t.calls,p?p.calls:0);}return perfHistory[k]?perfHistory[k].calls:0;}
 function mondayOf(d){const x=new Date(d);const off=(x.getDay()+6)%7;x.setDate(x.getDate()-off);x.setHours(0,0,0,0);return x;}
@@ -523,7 +580,7 @@ function renderPerfPage(){
     const N=14,labels=[],vals=[];
     for(let i=N-1;i>=0;i--){const d=new Date(t);d.setDate(d.getDate()-i);labels.push(`${d.getDate()}/${d.getMonth()+1}`);vals.push(callsOn(d));}
     const avg=vals.map((_,i)=>{const s=vals.slice(Math.max(0,i-6),i+1);return Math.round(s.reduce((a,b)=>a+b,0)/s.length);});
-    const ts=todayStats();
+    const ts=todayView();
     const prev7=vals.slice(-8,-1);const mean7=prev7.length?Math.round(prev7.reduce((a,b)=>a+b,0)/prev7.length):0;
     document.getElementById('chartTitle').textContent='Appels par jour · 14 derniers jours';
     document.getElementById('chartLegend').innerHTML='<span><i style="border-color:#181B1E"></i>Appels/jour</span><span><i style="border-color:#B99A5B;border-top-style:dashed"></i>Moyenne 7j</span>';
@@ -621,4 +678,7 @@ document.getElementById('histImportBtn').onclick=()=>document.getElementById('hi
 document.getElementById('histInput').onchange=e=>{if(e.target.files[0]){importHistory(e.target.files[0]);e.target.value='';}};
 
 loadHistory();
-syncCtrls();LEADS=demoData();render();commitToday();
+syncCtrls();
+LEADS=demoData();
+calledKeys=loadCalled();syncCalledFromKeys();
+render();commitToday();

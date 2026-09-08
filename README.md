@@ -131,7 +131,10 @@ attendant un éventuel backend. Prendre l'habitude d'exporter en fin de semaine.
   `splitHeaderCells` (en-têtes agglutinés par pdf.js), `dataColumns` (grille
   mesurée dans les données), `extractRows` / `splitCells` (ancrage sur le
   téléphone, cellules centrées ou calées en haut), `deriveCaller`, `toCSV`
-- `mapRow` / `pick` — parsing et mapping souple des colonnes CSV
+- `mapRow` / `field` / `pick` — lecture des colonnes (canonique d'abord,
+  correspondance souple en repli)
+- `leadKey` / `loadCalled` / `saveCalled` — appels du jour retenus par identité
+  de lead, conservés d'un rechargement ou d'un ré-import à l'autre
 - `scoreLead` — score ; `tierOf` / `prio` — les 3 paliers et le tri
 - `render` — rendu principal (rappels, stats, pool) ; `renderFocus` — mode focus
 - `renderPerf` — panneau du jour ; `renderPerfPage` + `svgLine` — page Performance

@@ -99,6 +99,31 @@ d'appels priorisée** : qui appeler, dans quel ordre, aujourd'hui.
      plus sur le rang de la colonne dans le fichier : deux exports aux mêmes
      colonnes rangées autrement donnent strictement le même mapping.
 
+6. **L'export chargé survit à un rafraîchissement (24 h)** ✅ — `perfHistory` et
+   `calledDay` étaient déjà persistés, mais **pas le fichier lui-même** : au
+   rechargement, `LEADS=demoData()` reprenait la main, `syncCalledFromKeys` ne
+   retrouvait plus aucun lead et la barre « Appelés aujourd'hui » retombait à
+   0/25 — alors que la page Performance, elle, comptait juste (`todayView` fait
+   un `Math.max` avec l'historique). C'était ça, la « progression perdue ».
+   - Clé `lastImport` : `{savedAt,label,kind,headers,rows,map,warnings}` — on
+     garde les lignes **brutes** + la correspondance des colonnes, pas les
+     leads mappés, pour que « Corriger les colonnes » et « Télécharger le CSV »
+     marchent encore après un rechargement.
+   - `saveImport` (fin d'`applyMapping`) / `loadImport` / `restoreImport`
+     (au démarrage, avant le repli sur `demoData`) / `forgetImport`.
+   - **24 h à compter du chargement**, pas du dernier affichage :
+     `applyMapping(map,restoring)` ne ré-enregistre pas quand il rejoue un
+     fichier relu, sinon la péremption repartirait à zéro à chaque
+     rafraîchissement et le fichier ne s'effacerait jamais.
+   - `calledDay` reste calé sur la **journée civile** (§7) : c'est voulu, une
+     nouvelle journée repart de zéro même si l'export de la veille est encore là.
+   - Garde-fous : payload > ~3,5 Mo → on ne persiste pas (quota) ; tous les
+     accès storage restent guardés → `localStorage` bloqué = repli sur la démo.
+   - Bouton **« Oublier ce fichier »** : efface l'export ET `calledDay` (qui
+     porte téléphone + nom). `perfHistory`, agrégé et anonyme, est conservé.
+     C'est la contrepartie assumée d'écrire des données leads sur le disque du
+     poste — local, jamais un serveur, mais persistant : il faut pouvoir l'effacer.
+
 Note : PapaParse et pdf.js sont servis depuis `vendor/` au lieu d'un CDN —
 l'outil marche hors ligne / derrière un réseau d'entreprise verrouillé, et
 n'émet plus aucune requête tierce depuis une page qui manipule des données leads.
@@ -225,6 +250,10 @@ amont, donc `Nb Of Outbound Calls ≥ 1` toujours. On distingue en comparant
   `{date, keys}`), par identité de lead et non par id interne. Une nouvelle
   journée repart naturellement de zéro ; un ré-import en cours de journée ne
   perd plus les appels déjà marqués.
+- **L'export chargé** est persisté 24 h (clé `lastImport`, §2.6) pour que la
+  file et la progression du jour survivent à un rafraîchissement. Ce sont des
+  données leads sur le disque du poste : la péremption 24 h et le bouton
+  « Oublier ce fichier » ne sont pas décoratifs, ne pas les retirer.
 - **Ne PAS utiliser** de storage non supporté ailleurs ; garder les accès storage
   tolérants aux erreurs.
 
@@ -260,7 +289,9 @@ amont, donc `Nb Of Outbound Calls ≥ 1` toujours. On distingue en comparant
 `exportHistory`/`importHistory`/`mergeHistory`/`sanitizeDay` (sauvegarde JSON) ·
 `ingestRows`/`applyMapping`/`openMapper` (import unifié CSV+PDF et écran de
 correspondance) · `renderMissingCols` (panneau des colonnes absentes de
-l'export) · `leadKey`/`loadCalled`/`saveCalled`/`syncCalledFromKeys`
+l'export) · `saveImport`/`loadImport`/`restoreImport`/`forgetImport` (l'export
+chargé survit 24 h au rafraîchissement) ·
+`leadKey`/`loadCalled`/`saveCalled`/`syncCalledFromKeys`
 (appels du jour persistés) · `field` (lecture des colonnes canoniques).
 
 `columns.js` : `COLUMNS` (dictionnaire des colonnes attendues + synonymes, avec

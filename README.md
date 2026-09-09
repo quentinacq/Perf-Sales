@@ -124,6 +124,43 @@ Pourquoi une URL fixe : l'historique de performance vit dans le `localStorage`
 **de cette origine**. Une URL stable = un historique qui persiste d'un jour à
 l'autre, sans « rouvrir le bon fichier ».
 
+## Ce qui survit à un rafraîchissement
+
+Trois choses distinctes sont conservées dans le `localStorage` du navigateur —
+donc sur ton poste, rien ne part vers un serveur :
+
+| Clé | Contenu | Durée de vie |
+|---|---|---|
+| `perfHistory` | l'historique de performance, agrégé (appels/jour) | illimitée |
+| `calledDay` | les leads marqués « appelé », par téléphone + nom | la journée en cours |
+| `lastImport` | **l'export chargé** : lignes brutes + correspondance des colonnes | **24 h après le chargement** |
+
+`lastImport` est l'ajout récent. Avant, l'export n'était pas conservé : au
+rafraîchissement on retombait sur les données de démonstration, et comme plus
+aucun lead ne correspondait aux appels stockés, la barre « Appelés
+aujourd'hui » repartait à 0/25 — alors même que la page Performance, elle,
+comptait juste. Maintenant le fichier est repris tel quel, la barre de
+progression et les leads marqués reviennent avec, et « Corriger les colonnes »
+comme « Télécharger le CSV » fonctionnent encore.
+
+Détails :
+
+- **24 h à compter du chargement**, pas du dernier affichage : rafraîchir la
+  page ne repousse pas la péremption. Passé ce délai, le fichier est effacé du
+  navigateur au démarrage suivant et on revient aux données de démonstration.
+- `calledDay` reste calé sur la **journée civile** — c'est voulu : une nouvelle
+  journée repart de zéro, même si l'export de la veille est encore là.
+- Un export de plus de ~3,5 Mo n'est pas persisté (on évite de faire sauter le
+  quota) ; l'outil fonctionne, il ne survivra simplement pas au rafraîchissement.
+- Si le `localStorage` est bloqué (iframe sandboxé), tout se dégrade en douceur :
+  on retombe sur la démo, sans erreur.
+
+**« Oublier ce fichier »** — à droite du nom du fichier chargé. Efface du
+navigateur l'export ET les appels du jour (qui portent téléphone et nom), et
+revient aux données de démonstration. L'historique de performance, lui, est
+agrégé et anonyme : il est conservé. À utiliser sur un poste partagé, ou après
+une démo à un collègue.
+
 ## Export / import de l'historique
 
 Onglet **Performance**, deux boutons :
@@ -152,6 +189,8 @@ attendant un éventuel backend. Prendre l'habitude d'exporter en fin de semaine.
   (`matchColumn`, `autoMap`), partagé par le PDF et l'écran de correspondance ;
   `missingReport` — bilan des colonnes absentes (nom Salesforce exact + rôle)
 - `renderMissingCols` — panneau « colonnes manquantes dans ton export »
+- `saveImport` / `loadImport` / `restoreImport` / `forgetImport` — l'export
+  chargé survit 24 h à un rafraîchissement (clé `lastImport`)
 - `pdf-csv.js` — `findHeaderBlocks` (en-têtes multi-lignes / répétés),
   `splitHeaderCells` (en-têtes agglutinés par pdf.js), `dataColumns` (grille
   mesurée dans les données), `extractRows` / `splitCells` (ancrage sur le

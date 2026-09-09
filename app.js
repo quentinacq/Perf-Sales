@@ -392,8 +392,11 @@ function ingestRows(rows,label,kind,warnings){
   else applyMapping(map);
 }
 
-/* map : {colonne canonique -> en-tête du fichier} */
-function applyMapping(map){
+/* map : {colonne canonique -> en-tête du fichier}
+   `restoring` : on rejoue un fichier relu du navigateur au démarrage — on ne le
+   ré-enregistre pas, sinon la péremption 24 h repartirait à zéro à chaque
+   rafraîchissement et le fichier ne s'effacerait jamais. */
+function applyMapping(map,restoring){
   if(!pendingImport)return;
   const{rows}=pendingImport;
   pendingImport.map=map;
@@ -407,9 +410,65 @@ function applyMapping(map){
   LEADS=norm.map(mapRow);
   syncCalledFromKeys();          // les appels du jour suivent les leads, pas les ids
   selIdx=-1;
+  if(!restoring)saveImport();
   showSource();
   render();
 }
+
+/* ===== Le fichier chargé survit à un rafraîchissement (24 h) =====
+   `perfHistory` et les appels du jour (`calledDay`) étaient déjà persistés,
+   mais PAS l'export lui-même : au rechargement on repartait sur les données de
+   démonstration, et comme `syncCalledFromKeys` ne retrouvait plus aucun lead,
+   la barre « Appelés aujourd'hui » retombait à 0/25 alors que la page
+   Performance, elle, comptait juste. On garde donc le fichier tel qu'il est
+   arrivé (lignes brutes + correspondance des colonnes), ce qui préserve aussi
+   « Corriger les colonnes » et « Télécharger le CSV » après un rechargement.
+
+   Ça reste 100 % local — rien ne part vers un serveur, le garde-fou du projet
+   tient — mais ce sont bien des données leads écrites sur le disque du poste :
+   d'où la péremption à 24 h et le bouton « Oublier ce fichier ». */
+const SNAP_KEY='lastImport';
+const SNAP_TTL=24*3600*1000;                 // 24 h pile, comme demandé
+const SNAP_MAX=3.5e6;                        // ~3,5 Mo : au-delà on renonce plutôt que de faire sauter le quota
+function saveImport(){
+  if(!lastImport)return;
+  try{
+    const{label,kind,headers,rows,map,warnings}=lastImport;
+    const payload=JSON.stringify({savedAt:Date.now(),label,kind,headers,rows,map,warnings:warnings||[]});
+    if(payload.length>SNAP_MAX){localStorage.removeItem(SNAP_KEY);return;}   // export énorme : on ne persiste pas
+    localStorage.setItem(SNAP_KEY,payload);
+  }catch(e){}                                // storage plein ou bloqué : on retombe simplement sur la démo
+}
+function loadImport(){
+  try{
+    const s=localStorage.getItem(SNAP_KEY);
+    if(!s)return null;
+    const o=JSON.parse(s);
+    if(!o||!Array.isArray(o.rows)||!o.rows.length||!o.map||!o.savedAt)return null;
+    if(Date.now()-o.savedAt>=SNAP_TTL){localStorage.removeItem(SNAP_KEY);return null;}   // périmé : on efface
+    return o;
+  }catch(e){return null;}
+}
+function restoreImport(){
+  const o=loadImport();
+  if(!o)return false;
+  pendingImport={rows:o.rows,headers:o.headers||headersOf(o.rows),label:o.label,kind:o.kind,
+    warnings:o.warnings||[],savedAt:o.savedAt,restored:true};
+  applyMapping(o.map,true);
+  return true;
+}
+/* Efface du navigateur tout ce qui touche aux leads : le fichier ET les appels
+   du jour (qui portent téléphone + nom). L'historique de performance, lui, est
+   agrégé et anonyme — on n'y touche pas. */
+function forgetImport(){
+  try{localStorage.removeItem(SNAP_KEY);localStorage.removeItem('calledDay');}catch(e){}
+  lastImport=null;pendingImport=null;
+  calledKeys=new Set();calledSet=new Set();skipSet=new Set();selIdx=-1;
+  LEADS=demoData();
+  showSource();render();
+  toast('Fichier oublié — retour aux données de démonstration');
+}
+const agoTxt=ms=>{const h=Math.floor(ms/3.6e6);if(h<1)return"il y a moins d'une heure";return h===1?'il y a 1 h':`il y a ${h} h`;};
 
 function showSource(){
   const el=document.getElementById('datasource');
@@ -420,15 +479,18 @@ function showSource(){
     renderMissingCols(null);
     return;
   }
-  const{label,kind,warnings,map}=lastImport;
+  const{label,kind,warnings,map,restored,savedAt}=lastImport;
   el.innerHTML=`<b>${esc(label)}</b> — ${LEADS.length} leads chargés`
     +(kind==='pdf'?' · <span title="Conversion faite dans ton navigateur, le PDF n\'est envoyé nulle part">PDF converti en local</span>':'')
+    +(restored&&savedAt?` · <span title="Relu depuis ce navigateur, il n'a jamais quitté ton poste. Effacé automatiquement 24 h après le chargement.">repris de ce navigateur, chargé ${esc(agoTxt(Date.now()-savedAt))}</span>`:'')
     +`<span class="dslinks">`
     +(kind==='pdf'?`<button class="lnk" id="dlCsvBtn" title="Récupérer le CSV issu du PDF">Télécharger le CSV</button>`:'')
-    +`<button class="lnk" id="remapBtn">Corriger les colonnes</button></span>`
+    +`<button class="lnk" id="remapBtn">Corriger les colonnes</button>`
+    +`<button class="lnk" id="forgetBtn" title="Efface de ce navigateur le fichier et les appels marqués aujourd'hui">Oublier ce fichier</button></span>`
     +(warnings&&warnings.length?`<div class="dswarn">${warnings.map(esc).join('<br>')}</div>`:'');
   const dl=document.getElementById('dlCsvBtn');if(dl)dl.onclick=downloadConvertedCSV;
   const rm=document.getElementById('remapBtn');if(rm)rm.onclick=openRemap;
+  const fg=document.getElementById('forgetBtn');if(fg)fg.onclick=forgetImport;
   renderMissingCols(map||{},true);                  // le détail des colonnes absentes vit dans son panneau
 }
 function openRemap(){
@@ -734,6 +796,7 @@ document.getElementById('histInput').onchange=e=>{if(e.target.files[0]){importHi
 
 loadHistory();
 syncCtrls();
-LEADS=demoData();
-calledKeys=loadCalled();syncCalledFromKeys();
+calledKeys=loadCalled();                     // AVANT la restauration : applyMapping s'en sert
+if(!restoreImport())LEADS=demoData();        // fichier de moins de 24 h ? on le reprend
+syncCalledFromKeys();
 showSource();render();commitToday();

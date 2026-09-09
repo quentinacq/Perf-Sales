@@ -199,6 +199,32 @@
   .dswarn{margin-top:6px;font-size:12.5px;color:var(--amber)}
   .dswarn .lnk{color:var(--amber)}
 
+  /* Colonnes manquantes dans l'export — même patte que .demo / .banner,
+     ambre quand le score est seulement dégradé, rouge signal quand la file ne
+     peut pas être construite. */
+  .misscols{margin-top:14px;padding:13px 16px 12px;border-radius:9px;
+    background:var(--amber-soft);border:1px solid #e6d3a8;color:#8a5d12;font-size:13px}
+  .misscols[hidden]{display:none}
+  .misscols.blocking{background:var(--signal-soft);border-color:#f2cdc2;color:#a53622}
+  .mchead{display:flex;align-items:center;gap:9px;font-size:13px;font-weight:700}
+  .mchead .dot{width:7px;height:7px;border-radius:50%;background:var(--amber);flex:none}
+  .misscols.blocking .mchead .dot{background:var(--signal)}
+  .mchead .mcclose{margin-left:auto;color:inherit;opacity:.7;font-weight:600}
+  .mchead .mcclose:hover{opacity:1;color:inherit}
+  .mctxt{margin:7px 0 0;font-size:12.5px;line-height:1.5;font-weight:500;opacity:.95}
+  .mcsub{margin-top:10px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;font-weight:700;opacity:.75}
+  .mclist{list-style:none;margin:6px 0 0;padding:0;display:grid;gap:5px}
+  .mclist li{display:flex;flex-wrap:wrap;align-items:baseline;gap:9px}
+  .mclist code{font-family:var(--mono);font-size:12.5px;font-weight:700;background:rgba(255,255,255,.72);
+    border:1px solid rgba(0,0,0,.07);border-radius:5px;padding:2px 7px;color:inherit}
+  .mclist .mcuse{font-size:12px;opacity:.85}
+  .mcopt{margin:10px 0 0;font-size:12px;opacity:.85}
+  .mcopt code{font-family:var(--mono);font-size:11.5px;background:rgba(255,255,255,.6);
+    border-radius:4px;padding:1px 5px}
+  .mcfoot{margin:10px 0 0;font-size:12.5px}
+  .mcfoot .lnk{color:inherit;font-weight:700}
+  #mapMsg code{font-family:var(--mono);font-size:12px;background:var(--line2);border-radius:4px;padding:1px 5px}
+
   .modal{position:fixed;inset:0;z-index:80;background:rgba(24,27,30,.34);display:flex;align-items:flex-start;
     justify-content:center;padding:40px 20px;overflow:auto}
   .modal[hidden]{display:none}

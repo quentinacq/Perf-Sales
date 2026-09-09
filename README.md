@@ -69,6 +69,29 @@ avec l'aperçu de la première valeur de chaque colonne. Il reste accessible à
 tout moment via **« Corriger les colonnes »**. C'est ce qui permet à un autre
 commercial, dont l'export a d'autres intitulés, d'utiliser l'outil.
 
+**L'ordre des colonnes n'a aucune importance.** Les colonnes sont reconnues par
+leur **nom** (`LeadColumns.autoMap`), jamais par leur position : un export dont
+les colonnes ont été réordonnées dans la vue Salesforce se charge exactement
+pareil. Les ex æquo de la détection sont départagés sur la spécificité du
+motif puis sur l'intitulé — jamais sur le rang de la colonne dans le fichier —
+donc deux exports aux mêmes colonnes rangées autrement donnent le même mapping.
+
+**Colonnes manquantes** — si l'export ne contient pas toutes les colonnes dont
+l'outil a besoin, un panneau s'affiche sous l'en-tête et donne le **nom exact
+de chaque colonne Salesforce à ajouter** (`Lead age (hours)`,
+`Last Outbound Call Date`, `GA Source`…), ce que chacune pilote dans l'outil,
+et la consigne : les ajouter à la vue liste Salesforce (*Modifier la vue →
+Sélectionner les champs à afficher*) puis relancer l'export. Deux niveaux :
+
+- **ambre** — les leads sont chargés quand même, mais ces colonnes comptent
+  dans le score, donc la priorisation est dégradée ;
+- **rouge** — `Name` ou `Phone` manque : la file ne peut pas être construite,
+  l'écran de correspondance s'ouvre en nommant la colonne introuvable.
+
+Les colonnes purement d'affichage (`Company`, `Business type`,
+`Nb Of Outbound Calls`) sont signalées à part, en note. Le panneau se masque
+d'un clic et réapparaît au prochain import.
+
 Quand un groupe d'en-têtes est trop aggloméré pour être découpé de façon sûre,
 les colonnes concernées sont laissées en « Colonne N » avec un avertissement,
 plutôt que mal nommées : un libellé connu posé sur les mauvaises données serait
@@ -126,7 +149,9 @@ attendant un éventuel backend. Prendre l'habitude d'exporter en fin de semaine.
 - `ingestRows` / `applyMapping` / `openMapper` — import unifié CSV + PDF et
   écran de correspondance des colonnes
 - `columns.js` — dictionnaire des colonnes attendues et détection souple
-  (`matchColumn`, `autoMap`), partagé par le PDF et l'écran de correspondance
+  (`matchColumn`, `autoMap`), partagé par le PDF et l'écran de correspondance ;
+  `missingReport` — bilan des colonnes absentes (nom Salesforce exact + rôle)
+- `renderMissingCols` — panneau « colonnes manquantes dans ton export »
 - `pdf-csv.js` — `findHeaderBlocks` (en-têtes multi-lignes / répétés),
   `splitHeaderCells` (en-têtes agglutinés par pdf.js), `dataColumns` (grille
   mesurée dans les données), `extractRows` / `splitCells` (ancrage sur le

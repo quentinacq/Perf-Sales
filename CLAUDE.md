@@ -77,6 +77,28 @@ d'appels priorisée** : qui appeler, dans quel ordre, aujourd'hui.
    la première valeur de la colonne choisie. Les colonnes qui comptent dans le
    score mais n'ont pas été trouvées sont signalées sous le titre.
 
+5. **Colonnes manquantes signalées + ordre des colonnes indifférent** ✅ —
+   - `LeadColumns.missingReport(map)` fait le bilan d'un import en trois
+     niveaux : `required` (Name/Phone — la file ne peut pas être construite),
+     `important` (elles pèsent dans le score) et `optional` (affichage seul).
+     Chaque entrée porte le **nom exact de la colonne Salesforce** (la clé
+     canonique EST cet intitulé), son libellé lisible et son `use` — ce qu'on
+     perd sans elle.
+   - `renderMissingCols` (app.js) affiche ce bilan dans `#missingCols`, sous
+     l'en-tête : ambre quand le score est seulement dégradé, rouge signal quand
+     c'est bloquant, avec la consigne « ajoute-les à ta vue liste Salesforce
+     (Modifier la vue → Sélectionner les champs à afficher), puis relance
+     l'export ». Masquable ; ré-armé à chaque nouvel import (`missingDismissed`).
+     Il remplace l'ancienne ligne discrète « Colonnes non trouvées ».
+     Un import abandonné faute de `Name`/`Phone` laisse le message en place :
+     c'est le cas où l'on a le plus besoin de savoir quoi ajouter.
+   - L'écran de correspondance nomme lui aussi les colonnes introuvables.
+   - **Ordre des colonnes** : la détection se fait par le NOM depuis le début
+     (`autoMap`), jamais par la position. Le tri des candidats départage
+     désormais les ex æquo sur la longueur du motif puis sur l'intitulé, et non
+     plus sur le rang de la colonne dans le fichier : deux exports aux mêmes
+     colonnes rangées autrement donnent strictement le même mapping.
+
 Note : PapaParse et pdf.js sont servis depuis `vendor/` au lieu d'un CDN —
 l'outil marche hors ligne / derrière un réseau d'entreprise verrouillé, et
 n'émet plus aucune requête tierce depuis une page qui manipule des données leads.
@@ -237,12 +259,15 @@ amont, donc `Nb Of Outbound Calls ≥ 1` toujours. On distingue en comparant
 `loadHistory`/`saveHistory`/`seedHistory`/`commitToday` (historique perf) ·
 `exportHistory`/`importHistory`/`mergeHistory`/`sanitizeDay` (sauvegarde JSON) ·
 `ingestRows`/`applyMapping`/`openMapper` (import unifié CSV+PDF et écran de
-correspondance) · `leadKey`/`loadCalled`/`saveCalled`/`syncCalledFromKeys`
+correspondance) · `renderMissingCols` (panneau des colonnes absentes de
+l'export) · `leadKey`/`loadCalled`/`saveCalled`/`syncCalledFromKeys`
 (appels du jour persistés) · `field` (lecture des colonnes canoniques).
 
-`columns.js` : `COLUMNS` (dictionnaire des colonnes attendues + synonymes) ·
-`matchColumn` (correspondance pondérée égal > commence par > contient) ·
-`autoMap` · `missingRequired`/`missingImportant`. **Une seule source de vérité**
+`columns.js` : `COLUMNS` (dictionnaire des colonnes attendues + synonymes, avec
+le `use` de chacune) · `matchColumn` (correspondance pondérée égal > commence
+par > contient) · `autoMap` (tri déterministe : indépendant de l'ordre des
+colonnes) · `missingRequired`/`missingImportant`/`missingOptional` ·
+`missingReport` (bilan prêt à afficher). **Une seule source de vérité**
 pour la détection dans le PDF et pour l'écran de correspondance.
 
 `pdf-csv.js` : `readItems` (pdf.js) · `groupLines` · `cellsOf` ·

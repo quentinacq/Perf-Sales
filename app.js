@@ -384,6 +384,7 @@ function ingestRows(rows,label,kind,warnings){
   rows=(rows||[]).filter(r=>r&&Object.values(r).some(v=>txt(v)));
   if(!rows.length){alert('Aucune ligne exploitable dans ce fichier.');return;}
   const headers=headersOf(rows);
+  missingDismissed='';                              // nouveau fichier = on re-signale ce qui manque
   pendingImport={rows,headers,label,kind,warnings:warnings||[]};
   const map=LeadColumns.autoMap(headers);
   const missing=LeadColumns.missingRequired(map);
@@ -414,21 +415,65 @@ function showSource(){
   const el=document.getElementById('datasource');
   const demo=document.getElementById('demoBanner');
   if(demo)demo.hidden=!!lastImport;
-  if(!lastImport){el.textContent="Données de démonstration — dépose ton export CSV ou ton PDF Printable View pour passer sur tes vrais leads";return;}
+  if(!lastImport){
+    el.textContent="Données de démonstration — dépose ton export CSV ou ton PDF Printable View pour passer sur tes vrais leads";
+    renderMissingCols(null);
+    return;
+  }
   const{label,kind,warnings,map}=lastImport;
-  const absentes=LeadColumns.missingImportant(map||{});
   el.innerHTML=`<b>${esc(label)}</b> — ${LEADS.length} leads chargés`
     +(kind==='pdf'?' · <span title="Conversion faite dans ton navigateur, le PDF n\'est envoyé nulle part">PDF converti en local</span>':'')
     +`<span class="dslinks">`
     +(kind==='pdf'?`<button class="lnk" id="dlCsvBtn" title="Récupérer le CSV issu du PDF">Télécharger le CSV</button>`:'')
     +`<button class="lnk" id="remapBtn">Corriger les colonnes</button></span>`
-    +(absentes.length?`<div class="dswarn">Colonnes non trouvées : ${esc(absentes.join(', '))} — le score est calculé sans elles. <button class="lnk" id="remapBtn2">Corriger</button></div>`:'')
     +(warnings&&warnings.length?`<div class="dswarn">${warnings.map(esc).join('<br>')}</div>`:'');
   const dl=document.getElementById('dlCsvBtn');if(dl)dl.onclick=downloadConvertedCSV;
-  ['remapBtn','remapBtn2'].forEach(id=>{const b=document.getElementById(id);if(b)b.onclick=()=>{
-    pendingImport=lastImport;                       // on re-corrige le fichier déjà chargé
-    openMapper(lastImport.map||LeadColumns.autoMap(lastImport.headers),[]);
-  };});
+  const rm=document.getElementById('remapBtn');if(rm)rm.onclick=openRemap;
+  renderMissingCols(map||{},true);                  // le détail des colonnes absentes vit dans son panneau
+}
+function openRemap(){
+  if(!lastImport)return;
+  pendingImport=lastImport;                         // on re-corrige le fichier déjà chargé
+  openMapper(lastImport.map||LeadColumns.autoMap(lastImport.headers),[]);
+}
+
+/* --- Colonnes manquantes : ce qu'il faut ajouter à l'export Salesforce ---
+   L'ordre des colonnes n'a aucune importance (elles sont reconnues par leur
+   NOM, cf. LeadColumns.autoMap) ; leur ABSENCE, si. On nomme donc chaque
+   colonne manquante par son intitulé Salesforce exact, on dit ce qu'elle
+   pilote, et on rappelle qu'il faut la rajouter à la vue liste avant de
+   ré-exporter. Le panneau est masquable : un export volontairement partiel ne
+   doit pas harceler. */
+let missingDismissed='';
+function renderMissingCols(map,allowRemap){
+  const box=document.getElementById('missingCols');
+  if(!box)return;
+  if(!map){box.hidden=true;box.innerHTML='';return;}
+  const rep=LeadColumns.missingReport(map);
+  const sign=[...rep.required,...rep.important].map(c=>c.key).join('|');
+  if(!rep.any||sign===missingDismissed){box.hidden=true;box.innerHTML='';return;}
+  const manquantes=[...rep.required,...rep.important];
+  const li=c=>`<li><code>${esc(c.key)}</code><span class="mcuse">${esc(c.label)} — ${esc(c.use)}</span></li>`;
+  box.className='misscols'+(rep.blocking?' blocking':'');
+  box.innerHTML=`<div class="mchead">
+      <span class="dot"></span>
+      <b>${manquantes.length===1?'Une colonne manquante':manquantes.length+' colonnes manquantes'} dans ton export Salesforce</b>
+      <button class="lnk mcclose" id="mcDismiss" title="Masquer jusqu'au prochain import">Masquer</button>
+    </div>
+    <p class="mctxt">${rep.blocking
+      ? "Sans ces colonnes, la file d'appels ne peut pas être construite."
+      : "L'outil fonctionne quand même, mais ces colonnes entrent dans le score : sans elles, la priorisation est dégradée."}
+      Ajoute-les à ta vue liste Salesforce (<i>Modifier la vue → Sélectionner les champs à afficher</i>), puis relance l'export.
+      Leur ordre dans l'export n'a aucune importance.</p>
+    <div class="mcsub">Nom exact de la colonne à ajouter dans Salesforce :</div>
+    <ul class="mclist">${manquantes.map(li).join('')}</ul>
+    ${rep.optional.length?`<p class="mcopt">Facultatives, également absentes : ${rep.optional.map(c=>`<code>${esc(c.key)}</code>`).join(', ')} — affichage seulement, aucun effet sur le tri.</p>`:''}
+    ${allowRemap?`<p class="mcfoot">Ces colonnes sont bien dans ton export mais sous un autre intitulé ? <button class="lnk" id="remapBtn2">Corriger les colonnes à la main</button></p>`:''}`;
+  box.hidden=false;
+  const d=document.getElementById('mcDismiss');
+  if(d)d.onclick=()=>{missingDismissed=sign;renderMissingCols(map,allowRemap);};
+  const r=document.getElementById('remapBtn2');
+  if(r)r.onclick=openRemap;
 }
 
 /* Le CSV issu du PDF : ce que produisait le convertisseur tiers, en local. */
@@ -459,9 +504,9 @@ function openMapper(map,missing){
     </div>`;
   }).join('');
   const msg=document.getElementById('mapMsg');
-  msg.textContent=missing&&missing.length
-    ?"Détection automatique incomplète : indique au moins le nom et le téléphone."
-    :"Vérifie ou corrige les colonnes détectées. L'aperçu montre la première valeur de la colonne choisie.";
+  msg.innerHTML=missing&&missing.length
+    ?`Détection automatique incomplète : ${missing.map(k=>`<code>${esc(k)}</code>`).join(', ')} ${missing.length>1?'n\'ont pas été trouvées':'n\'a pas été trouvée'} dans le fichier. Indique la colonne correspondante ci-dessous, ou ajoute-la à ton export Salesforce.`
+    :"Vérifie ou corrige les colonnes détectées. Les colonnes sont reconnues par leur nom, leur ordre dans le fichier n'a pas d'importance. L'aperçu montre la première valeur de la colonne choisie.";
   box.querySelectorAll('.msel').forEach(sel=>sel.onchange=()=>{
     box.querySelector(`[data-prev="${CSS.escape(sel.dataset.key)}"]`).textContent=firstValue(rows,sel.value)||'—';
     validateMapper();
@@ -479,17 +524,23 @@ function validateMapper(){
   const ok=document.getElementById('mapOk');
   ok.disabled=missing.length>0;
   document.getElementById('mapHint').textContent=missing.length
-    ?'Colonnes obligatoires manquantes : '+missing.join(', ')
+    ?'Colonnes obligatoires manquantes : '+missing.join(' · ')
     :'';
 }
 function closeMapper(){document.getElementById('mapper').hidden=true;}
 document.getElementById('mapOk').onclick=()=>{applyMapping(readMapper());closeMapper();toast('Colonnes appliquées');};
 document.getElementById('mapCancel').onclick=()=>{
-  closeMapper();
   const abandoned=pendingImport&&pendingImport!==lastImport;
+  const left=abandoned?readMapper():null;           // l'état des selects au moment où l'on abandonne
+  closeMapper();
   pendingImport=lastImport;
   showSource();                                     // revient au fichier réellement chargé
-  if(abandoned)toast('Import annulé');
+  if(abandoned){
+    toast('Import annulé');
+    /* Abandonner sur des colonnes obligatoires introuvables, c'est le cas où
+       l'utilisateur a le plus besoin de savoir quoi ajouter à son export. */
+    if(LeadColumns.missingRequired(left).length)renderMissingCols(left,false);
+  }
 };
 document.getElementById('mapper').onclick=e=>{if(e.target.id==='mapper')closeMapper();};
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!document.getElementById('mapper').hidden)closeMapper();});

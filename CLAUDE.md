@@ -86,6 +86,9 @@ n'émet plus aucune requête tierce depuis une page qui manipule des données le
 Ouvrir `index.html` dans un navigateur (ou `python3 -m http.server 8000` pour
 être au plus près de la prod). Au chargement, l'app affiche
 des **données de démonstration** (générées en JS) tant qu'aucun CSV n'est chargé.
+Elles sont signalées par un **bandeau ambre** impossible à manquer, et leurs
+numéros sont pris dans la plage `06 39 98 XX XX` réservée à la fiction : ouvrir
+l'outil sans charger l'export ne peut pas mener à appeler quelqu'un par erreur.
 Bouton « Charger un CSV », « Importer un PDF Printable View », ou
 glisser-déposer (`.csv` comme `.pdf`) pour passer sur des vraies données.
 Les CSV réels ne sont **pas** versionnés : `.gitignore` bloque `*.csv` pour

@@ -70,6 +70,12 @@
   #chartBox svg{width:100%;height:auto;display:block}
   @media(max-width:640px){.kpis{grid-template-columns:repeat(2,1fr)}}
 
+  /* bandeau démo : impossible de confondre avec les vrais leads */
+  .demo{display:flex;align-items:center;gap:9px;margin-top:16px;padding:11px 14px;border-radius:9px;
+    background:var(--amber-soft);border:1px solid #e6d3a8;color:#8a5d12;font-size:13px;font-weight:600}
+  .demo[hidden]{display:none}
+  .demo .dot{width:7px;height:7px;border-radius:50%;background:var(--amber);flex:none}
+
   /* expire banner */
   .banner{display:none;margin-top:14px;padding:11px 14px;border-radius:9px;background:var(--signal-soft);
     border:1px solid #f2cdc2;color:#a53622;font-size:13px;font-weight:600;align-items:center;gap:9px}

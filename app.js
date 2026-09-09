@@ -343,7 +343,9 @@ function demoData(){
     const sub=new Date(now-age*H);let call=new Date(sub);
     if(i%9===0)call=new Date(sub.getTime()+(2+(i%6))*H);
     else if(i%9===3){call=new Date(sub.getTime()+1*H);if(age>140)call=new Date(now-8*H);}
-    const ph='+33 6 '+String(10+i).padStart(2,'0')+' '+String(20+i%40).padStart(2,'0')+' '+String(30+i%30).padStart(2,'0')+' '+String(40+i%20).padStart(2,'0');
+    // plage 06 39 98 XX XX, réservée à la fiction : aucun risque d'appeler
+    // quelqu'un par erreur si l'outil est ouvert sans avoir chargé l'export.
+    const ph='+33 6 39 98 '+String(10+i).padStart(2,'0')+' '+String(10+(i*7)%90).padStart(2,'0');
     rows.push({Name:firsts[i%firsts.length]+' '+last[i%15],Company:cos[i]||'-',Phone:ph,'Prospect product interest':prods[i%prods.length],'Lead age (hours)':age.toFixed(2).replace('.',','),'GA Source':sources[i%sources.length],'Business type':biz[i%biz.length],'Last Form Submission Date':fmtDE(sub),'Last Outbound Call Date':fmtDE(call),'Nb Of Outbound Calls':(i===12?26:(i%9===0?2:1)),'Call back date':''});
   }
   rows[1]['Call back date']=fmtDE(new Date(now+2*H));
@@ -410,6 +412,8 @@ function applyMapping(map){
 
 function showSource(){
   const el=document.getElementById('datasource');
+  const demo=document.getElementById('demoBanner');
+  if(demo)demo.hidden=!!lastImport;
   if(!lastImport){el.textContent="Données de démonstration — dépose ton export CSV ou ton PDF Printable View pour passer sur tes vrais leads";return;}
   const{label,kind,warnings,map}=lastImport;
   const absentes=LeadColumns.missingImportant(map||{});
@@ -681,4 +685,4 @@ loadHistory();
 syncCtrls();
 LEADS=demoData();
 calledKeys=loadCalled();syncCalledFromKeys();
-render();commitToday();
+showSource();render();commitToday();

@@ -189,6 +189,10 @@ function render(){
   // tri : en mode priorité, les backlog (>14j) passent toujours APRÈS les actifs
   scored.sort((a,b)=>{
     if(sortMode==='age')return b.L.ageHours-a.L.ageHours || a.L.id-b.L.id;
+    /* « demande la plus récente » : on trie sur Last Form Submission Date (subDate)
+       et non sur ageHours, qui vient d'une colonne Salesforce distincte et peut
+       manquer. Une demande sans date connue vaut 0 et part donc en fin de liste. */
+    if(sortMode==='recent')return (b.L.subDate?+b.L.subDate:0)-(a.L.subDate?+a.L.subDate:0) || a.L.id-b.L.id;
     if(sortMode==='value')return productScore(b.L.product)-productScore(a.L.product) || b.r.score-a.r.score || a.L.id-b.L.id;
     return prio(a,b);
   });

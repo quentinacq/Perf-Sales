@@ -87,6 +87,9 @@ function passFilter(L,r){
 }
 function passQuery(L){if(!query)return true;const q=query.toLowerCase();return (L.name+' '+L.company+' '+L.product+' '+L.source+' '+L.biz).toLowerCase().includes(q);}
 
+const AGE_UNKNOWN=1e12;
+const ageOrLast=L=>(L.ageHours>0||L.subDate)?L.ageHours:AGE_UNKNOWN;
+
 function rowHTML(L,r,rank,isCalled){
   const bd=Object.entries(r.parts).map(([k,v])=>`<span class="bd-item">${esc(k)} <b>+${v}</b></span>`).join('');
   return `<div class="row ${rank<=5&&!isCalled?'top':''} ${isCalled?'done':''}" data-id="${L.id}">
@@ -189,10 +192,12 @@ function render(){
   // tri : en mode priorité, les backlog (>14j) passent toujours APRÈS les actifs
   scored.sort((a,b)=>{
     if(sortMode==='age')return b.L.ageHours-a.L.ageHours || a.L.id-b.L.id;
-    /* « demande la plus récente » : on trie sur Last Form Submission Date (subDate)
-       et non sur ageHours, qui vient d'une colonne Salesforce distincte et peut
-       manquer. Une demande sans date connue vaut 0 et part donc en fin de liste. */
-    if(sortMode==='recent')return (b.L.subDate?+b.L.subDate:0)-(a.L.subDate?+a.L.subDate:0) || a.L.id-b.L.id;
+    /* « demande la plus récente » : miroir du tri « plus vieux », sur la même
+       donnée (Lead age (hours)) mais en ordre croissant — petit âge = demande
+       récente. Un âge inconnu (ni la colonne, ni de date de formulaire pour le
+       reconstituer : mapRow retombe alors sur 0) part en fin de liste et non en
+       tête, sinon les lignes sans donnée squatteraient le haut de la file. */
+    if(sortMode==='recent')return ageOrLast(a.L)-ageOrLast(b.L) || a.L.id-b.L.id;
     if(sortMode==='value')return productScore(b.L.product)-productScore(a.L.product) || b.r.score-a.r.score || a.L.id-b.L.id;
     return prio(a,b);
   });
